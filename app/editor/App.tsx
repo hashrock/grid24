@@ -15,7 +15,8 @@ const App: FC<EditorProps> = ({ initialSegments = [], onChange }) => {
   const [tool, setTool] = useState<Tool>(Tool.SELECT);
   // Store selected nodes as strings "segmentId-pointType"
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
-  const gridSize = 32;
+  // Tabler icons are designed on a 24x24 grid with a 2px stroke.
+  const gridSize = 24;
 
   // Notify the parent (Edit page) so it can debounce-save to the server.
   useEffect(() => {

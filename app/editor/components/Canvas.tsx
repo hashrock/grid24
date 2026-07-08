@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { FC, Dispatch, SetStateAction } from 'react';
 import { useRef, useState, useEffect, useMemo } from 'react';
-import { Segment, Point, Tool, HIT_RADIUS, SelectionBox } from '../types';
+import { Segment, Point, Tool, HIT_RADIUS, GRID_SNAP, SelectionBox } from '../types';
 import { splitSegment, findProjectedT, segmentToSvgPath } from '../utils/bezierHelper';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -84,10 +84,18 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
        clientY = (e as React.MouseEvent).clientY;
     }
 
-    return {
+    const raw = {
       x: (clientX - CTM.e) / CTM.a,
       y: (clientY - CTM.f) / CTM.d
     };
+    // Snap to the grid so points land on the 24x24 grid like Tabler icons.
+    if (GRID_SNAP > 0) {
+      return {
+        x: Math.round(raw.x / GRID_SNAP) * GRID_SNAP,
+        y: Math.round(raw.y / GRID_SNAP) * GRID_SNAP
+      };
+    }
+    return raw;
   };
 
   const reflect = (p: Point, center: Point): Point => ({

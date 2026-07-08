@@ -5,6 +5,8 @@ import { and, desc, eq } from "drizzle-orm";
 import { rootView } from "./root-view";
 import { users, icons } from "./db/schema";
 import { getSession, clearSession } from "./utils/session";
+import { TABLER_ICONS } from "./lib/tablerIcons";
+import { pathsToSegments } from "./lib/pathImport";
 import type { Env } from "./global.d";
 
 const DEV_USER = {
@@ -154,6 +156,33 @@ const routes = app
       updatedAt: now,
     });
     return c.redirect(`/icons/${id}/edit`, 303);
+  })
+  // Import the built-in Tabler starter icons for the current user. Skips any
+  // already imported (matched by name). Imported icons start public.
+  .post("/icons/import-tabler", async (c) => {
+    const user = c.get("user");
+    if (!user) return c.redirect("/");
+    const db = drizzle(c.env.DB);
+    const existing = await db
+      .select({ name: icons.name })
+      .from(icons)
+      .where(eq(icons.userId, user.id));
+    const have = new Set(existing.map((r) => r.name));
+    const now = new Date().toISOString();
+    for (const icon of TABLER_ICONS) {
+      if (have.has(icon.name)) continue;
+      const segments = pathsToSegments(icon.paths);
+      await db.insert(icons).values({
+        id: crypto.randomUUID(),
+        userId: user.id,
+        name: icon.name,
+        content: JSON.stringify(segments),
+        isPublic: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    return c.redirect("/icons", 303);
   })
   .delete("/icons/:id", async (c) => {
     const user = c.get("user");

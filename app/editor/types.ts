@@ -36,3 +36,8 @@ export enum Tool {
 
 export const SNAP_THRESHOLD = 0.5;
 export const HIT_RADIUS = 0.8;
+
+// Grid snapping: placed/dragged points snap to the nearest multiple of this
+// (in grid units). 0.5 keeps points on the 24x24 grid / half-grid, matching
+// how Tabler icons are drawn. Set to 0 to disable snapping.
+export const GRID_SNAP = 0.5;

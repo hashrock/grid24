@@ -16,7 +16,7 @@ export function IconSvg({
   const paths = segmentsToPaths(segments);
   return (
     <svg
-      viewBox="0 0 32 32"
+      viewBox="0 0 24 24"
       width={size}
       height={size}
       className={className}

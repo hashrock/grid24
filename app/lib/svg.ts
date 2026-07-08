@@ -42,12 +42,12 @@ export function parseContent(content: string): Segment[] {
 }
 
 /** Render a standalone SVG document string (for downloads / raw endpoints). */
-export function segmentsToSvgString(segments: Segment[], size = 32): string {
+export function segmentsToSvgString(segments: Segment[], size = 24): string {
   const paths = segmentsToPaths(segments)
     .map(
       (d) =>
         `<path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`
     )
     .join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${paths}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}">${paths}</svg>`;
 }

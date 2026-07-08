@@ -266,7 +266,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, se
       </div>
 
       <div className="text-[10px] text-neutral-700 font-mono text-center">
-        Grid: 32x32px
+        Grid: 24x24px · Stroke 2px
       </div>
     </div>
   );

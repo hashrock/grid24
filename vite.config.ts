@@ -1,0 +1,12 @@
+import { defineConfig } from 'vite'
+import { cloudflare } from '@cloudflare/vite-plugin'
+import tailwindcss from '@tailwindcss/vite'
+import ssrPlugin from 'vite-ssr-components/plugin'
+import { inertiaPages } from '@hono/inertia/vite'
+
+export default defineConfig({
+  // React JSX is transformed by esbuild via tsconfig (jsx: react-jsx).
+  // No @vitejs/plugin-react — its Fast Refresh preamble isn't injected into
+  // our custom Inertia SSR document, which would break hydration.
+  plugins: [inertiaPages(), tailwindcss(), cloudflare(), ssrPlugin()],
+})

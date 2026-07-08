@@ -7,7 +7,7 @@ const Document = ({ page }: { page: PageObject }) => (
     <head>
       <meta charSet="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>SVG Icon Editor</title>
+      <title>grid24</title>
       <ViteClient />
       <Script src="/app/client.tsx" />
       <Link href="/app/styles.css" rel="stylesheet" />

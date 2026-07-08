@@ -7,9 +7,9 @@ export function Nav({ user }: { user: SessionUser | null }) {
     <header className="anim-header sticky top-0 z-20 border-b border-neutral-800 bg-neutral-950/80 backdrop-blur">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
         <Link href="/" className="flex items-center gap-2 font-mono text-lg font-bold">
-          <span aria-hidden>◇</span>
+          <span aria-hidden>▦</span>
           <span>
-            svg<span className="text-neutral-500">.icons</span>
+            grid<span className="text-neutral-500">24</span>
           </span>
         </Link>
         <nav className="flex items-center gap-4 text-sm">

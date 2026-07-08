@@ -49,7 +49,7 @@ export default function IconsShow({
 
   return (
     <div className="min-h-screen">
-      <Head title={`${icon.name} — SVG Icon`} />
+      <Head title={`${icon.name} — grid24`} />
       <Nav user={user} />
       <main className="mx-auto max-w-2xl px-6 py-10">
         <div className="anim-item flex flex-col items-center gap-6 rounded-2xl border border-neutral-800 bg-neutral-900/40 p-10">

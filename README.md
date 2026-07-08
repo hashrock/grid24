@@ -1,6 +1,6 @@
-# SVG Icon Editor
+# grid24
 
-ユーザーごとに stroke アイコンを作成し、公開できるサービス。
+24×24 グリッド / 2px stroke で、ユーザーごとに stroke アイコンを作成し、公開できるサービス。
 `luma-svg-editor`（ベジェエディタ）と Hono API を「クラサバ合体」した構成で、
 アーキテクチャは [`../edane`](../edane) を踏襲しています。
 

@@ -177,8 +177,8 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, se
   return (
     <div className="w-80 h-full bg-black border-l border-neutral-900 flex flex-col p-6 gap-8 overflow-y-auto">
       <div>
-        <h1 className="text-2xl font-bold font-mono text-white mb-2">Luma<span className="text-neutral-600">.svg</span></h1>
-        <p className="text-xs text-neutral-500">Vector Bezier Editor</p>
+        <h1 className="text-2xl font-bold font-mono text-white mb-2">grid<span className="text-neutral-600">24</span></h1>
+        <p className="text-xs text-neutral-500">24×24 stroke icon editor</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

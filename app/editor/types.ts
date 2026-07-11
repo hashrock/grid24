@@ -26,7 +26,15 @@ export enum Tool {
   ERASER = 'ERASER'
 }
 
-export const HIT_RADIUS = 0.8;
+// Primary (accent) color for all overlay UI: selected paths, anchors,
+// handles, marquee, transform controls. Matches the Figma/Illustrator
+// convention of a single blue accent for "active" state.
+export const PRIMARY_COLOR = '#3b82f6';
+
+// Hit tolerances in *screen pixels* — converted to SVG units per zoom level
+// so targets stay the same physical size regardless of zoom.
+export const ANCHOR_HIT_PX = 8;
+export const PATH_HOVER_PX = 6;
 
 // Grid snapping: placed/dragged points snap to the nearest multiple of this
 // (in grid units). 0.5 keeps points on the 24x24 grid / half-grid, matching

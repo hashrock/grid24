@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { FC, Dispatch, SetStateAction } from 'react';
 import { useRef, useState, useEffect, useMemo } from 'react';
-import { Segment, Point, Tool, HIT_RADIUS, GRID_SNAP, SelectionBox } from '../types';
+import { Segment, Point, Tool, GRID_SNAP, SelectionBox, PRIMARY_COLOR, ANCHOR_HIT_PX, PATH_HOVER_PX } from '../types';
 import { splitSegment, findProjectedT, segmentToSvgPath } from '../utils/bezierHelper';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -12,6 +12,9 @@ interface CanvasProps {
   gridSize: number;
   selectedNodeIds: Set<string>;
   setSelectedNodeIds: Dispatch<SetStateAction<Set<string>>>;
+  beginGesture: () => void;
+  undo: () => void;
+  redo: () => void;
 }
 
 interface PenState {
@@ -36,6 +39,76 @@ interface ViewBox {
 const MIN_VIEW_W = 2;
 const MAX_VIEW_W = 200;
 
+const isTypingTarget = (e: KeyboardEvent) => {
+  const t = e.target as HTMLElement | null;
+  return t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable;
+};
+
+const reflect = (p: Point, center: Point): Point => ({
+  x: center.x - (p.x - center.x),
+  y: center.y - (p.y - center.y)
+});
+
+// Translate the selected nodes (anchors carry their attached controls along).
+const translateSelection = (segs: Segment[], selection: Set<string>, delta: Point): Segment[] => {
+  const pointsToMove = new Set<string>();
+  selection.forEach(key => {
+    pointsToMove.add(key);
+    const [segId, type] = key.split('::');
+    if (type === 'p1') pointsToMove.add(`${segId}::c1`);
+    if (type === 'p2') pointsToMove.add(`${segId}::c2`);
+  });
+  return segs.map(seg => {
+    const moved = { ...seg };
+    let changed = false;
+    (['p1', 'c1', 'c2', 'p2'] as const).forEach(t => {
+      if (pointsToMove.has(`${seg.id}::${t}`)) {
+        moved[t] = { x: moved[t].x + delta.x, y: moved[t].y + delta.y };
+        changed = true;
+      }
+    });
+    return changed ? moved : seg;
+  });
+};
+
+// Reverse the direction of a path given its segments in chain order.
+// Junction smoothness travels with the junction: the flag at reversed[j].p2
+// is the original flag at the same anchor.
+const reversePath = (segs: Segment[]): Segment[] => {
+  const n = segs.length;
+  return segs.map((_, j) => {
+    const o = segs[n - 1 - j];
+    return {
+      ...o,
+      p1: o.p2,
+      c1: o.c2,
+      c2: o.c1,
+      p2: o.p1,
+      isSmoothP2: j < n - 1 ? !!segs[n - 2 - j].isSmoothP2 : false,
+    };
+  });
+};
+
+// Toggle smooth/corner for the anchor identified by "segId::p1|p2".
+const toggleAnchorSmooth = (segs: Segment[], anchorKey: string): Segment[] => {
+  const [segId, type] = anchorKey.split('::');
+  const seg = segs.find(s => s.id === segId);
+  if (!seg || (type !== 'p1' && type !== 'p2')) return segs;
+  const pt = type === 'p1' ? seg.p1 : seg.p2;
+  const incoming = segs.find(s => Math.hypot(s.p2.x - pt.x, s.p2.y - pt.y) < 0.001);
+  if (!incoming) return segs;
+  const makeSmooth = !incoming.isSmoothP2;
+  let updated = segs.map(s => s.id === incoming.id ? { ...s, isSmoothP2: makeSmooth } : s);
+  if (makeSmooth) {
+    const outgoing = updated.find(s => Math.hypot(s.p1.x - pt.x, s.p1.y - pt.y) < 0.001);
+    if (outgoing) {
+      const mirror = reflect(incoming.c2, pt);
+      updated = updated.map(s => s.id === outgoing.id ? { ...s, c1: mirror } : s);
+    }
+  }
+  return updated;
+};
+
 interface ResizeState {
   handle: ResizeHandleType;
   startPos: Point;
@@ -43,13 +116,16 @@ interface ResizeState {
   initialPoints: Record<string, Point>;
 }
 
-const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, selectedNodeIds, setSelectedNodeIds }) => {
+const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, selectedNodeIds, setSelectedNodeIds, beginGesture, undo, redo }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoveredSegmentId, setHoveredSegmentId] = useState<string | null>(null);
   const [previewPoint, setPreviewPoint] = useState<Point | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const lastDragPos = useRef<Point | null>(null);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
+  // Open-path endpoint under the cursor in Pen mode (continue / join target)
+  const [hoverEndpoint, setHoverEndpoint] = useState<Point | null>(null);
+  const lastNudgeAt = useRef(0);
 
   // Pen Tool State
   const [penState, setPenState] = useState<PenState | null>(null);
@@ -62,6 +138,27 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const lastPanClient = useRef<{ x: number; y: number } | null>(null);
+
+  // Rendered size of the SVG element, to convert screen px -> SVG units
+  const [svgSize, setSvgSize] = useState({ w: 1, h: 1 });
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const measure = () => {
+      const rect = svg.getBoundingClientRect();
+      setSvgSize({ w: rect.width || 1, h: rect.height || 1 });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(svg);
+    return () => ro.disconnect();
+  }, []);
+
+  // SVG user units per screen pixel (preserveAspectRatio "meet" -> max of both axes).
+  // Overlay UI (anchors, handles, hit areas) is sized in px * upp so it keeps a
+  // constant on-screen size at any zoom level.
+  const upp = Math.max(viewBox.w / svgSize.w, viewBox.h / svgSize.h);
+  const anchorHitR = ANCHOR_HIT_PX * upp;
 
   const resetView = () => setViewBox({ x: -2, y: -2, w: gridSize + 4, h: gridSize + 4 });
 
@@ -76,6 +173,16 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && !isTypingTarget(e) && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+        e.preventDefault();
+        if (e.key.toLowerCase() === 'y' || e.shiftKey) redo();
+        else undo();
+        // Interaction state may reference segments that no longer exist
+        setPenState(null);
+        setSelectedNodeIds(new Set());
+        return;
+      }
       if (e.key === 'Escape') {
         if (tool === Tool.PEN && penState?.isActive) {
           setPenState(null);
@@ -83,20 +190,64 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
         setSelectedNodeIds(new Set());
         setSelectionBox(null);
         setResizeState(null);
+      } else if (e.key.startsWith('Arrow') && !isTypingTarget(e) && tool === Tool.SELECT && selectedNodeIds.size > 0) {
+        const dirs: Record<string, Point> = {
+          ArrowLeft: { x: -1, y: 0 },
+          ArrowRight: { x: 1, y: 0 },
+          ArrowUp: { x: 0, y: -1 },
+          ArrowDown: { x: 0, y: 1 },
+        };
+        const dir = dirs[e.key];
+        if (!dir) return;
+        e.preventDefault();
+        const step = (GRID_SNAP || 0.5) * (e.shiftKey ? 4 : 1);
+        // Consecutive nudges within a short window collapse into one undo step
+        const now = Date.now();
+        if (now - lastNudgeAt.current > 800) beginGesture();
+        lastNudgeAt.current = now;
+        setSegments(prev => translateSelection(prev, selectedNodeIds, { x: dir.x * step, y: dir.y * step }));
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && !isTypingTarget(e)) {
+        if (selectedNodeIds.size === 0) return;
+        e.preventDefault();
+        beginGesture();
+
+        const anchorSegIds = new Set<string>();
+        selectedNodeIds.forEach(key => {
+          const [segId, type] = key.split('::');
+          if (type === 'p1' || type === 'p2') anchorSegIds.add(segId);
+        });
+
+        if (anchorSegIds.size > 0) {
+          // Deleting an anchor removes its adjoining segments (Illustrator-style);
+          // paths that lose a segment are no longer closed.
+          setSegments(prev => {
+            const brokenPathIds = new Set(
+              prev.filter(s => anchorSegIds.has(s.id)).map(s => s.pathId)
+            );
+            return prev
+              .filter(s => !anchorSegIds.has(s.id))
+              .map(s => brokenPathIds.has(s.pathId) && s.isClosed ? { ...s, isClosed: false } : s);
+          });
+        } else {
+          // Only control points selected: retract them into their anchors
+          setSegments(prev => prev.map(s => {
+            let next = s;
+            if (selectedNodeIds.has(`${s.id}::c1`)) next = { ...next, c1: { ...next.p1 } };
+            if (selectedNodeIds.has(`${s.id}::c2`)) next = { ...next, c2: { ...next.p2 }, isSmoothP2: false };
+            return next;
+          }));
+        }
+        setSelectedNodeIds(new Set());
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [tool, penState, setSelectedNodeIds]);
+  }, [tool, penState, selectedNodeIds, setSegments, setSelectedNodeIds, beginGesture, undo, redo]);
 
   // Space key: hold to pan with drag
   useEffect(() => {
-    const isTyping = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      return t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable;
-    };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !e.repeat && !isTyping(e)) {
+      if (e.code === 'Space' && !e.repeat && !isTypingTarget(e)) {
         e.preventDefault();
         setIsSpacePressed(true);
       }
@@ -173,11 +324,6 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
     return raw;
   };
 
-  const reflect = (p: Point, center: Point): Point => ({
-    x: center.x - (p.x - center.x),
-    y: center.y - (p.y - center.y)
-  });
-
   const getPointKey = (segId: string, type: string) => `${segId}::${type}`;
 
   const getAffectedKeys = (selection: Set<string>) => {
@@ -220,6 +366,40 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
   // Memoize bounds for rendering
   const affectedKeys = useMemo(() => getAffectedKeys(selectedNodeIds), [selectedNodeIds, segments]);
   const selectionBounds = useMemo(() => getSelectionBounds(affectedKeys, segments), [affectedKeys, segments]);
+
+  // Paths considered "active": anchors are only rendered for these
+  const selectedPathIds = useMemo(() => {
+    const ids = new Set<string>();
+    selectedNodeIds.forEach(key => {
+      const segId = key.split('::')[0];
+      const seg = segments.find(s => s.id === segId);
+      if (seg) ids.add(seg.pathId);
+    });
+    return ids;
+  }, [selectedNodeIds, segments]);
+
+  const hoveredPathId = useMemo(
+    () => segments.find(s => s.id === hoveredSegmentId)?.pathId ?? null,
+    [hoveredSegmentId, segments]
+  );
+
+  // Free endpoints of open paths (segments are kept in chain order per path).
+  // Pen mode uses these to continue an existing path or join two paths.
+  const openEndpoints = useMemo(() => {
+    const byPath = new Map<string, Segment[]>();
+    segments.forEach(s => {
+      const list = byPath.get(s.pathId);
+      if (list) list.push(s);
+      else byPath.set(s.pathId, [s]);
+    });
+    const eps: { pathId: string; end: 'head' | 'tail'; point: Point }[] = [];
+    byPath.forEach((segs, pathId) => {
+      if (segs[0].isClosed) return;
+      eps.push({ pathId, end: 'head', point: segs[0].p1 });
+      eps.push({ pathId, end: 'tail', point: segs[segs.length - 1].p2 });
+    });
+    return eps;
+  }, [segments]);
 
   // Calculate number of unique anchors involved in selection
   const uniqueSelectedAnchors = useMemo(() => {
@@ -271,7 +451,7 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
 
     // 1. Check Resize Handles
     if (showTransform && selectionBounds) {
-        const handleSize = 0.6; // Slightly generous hit area
+        const handleSize = ANCHOR_HIT_PX * upp;
         const handles: { type: ResizeHandleType, x: number, y: number }[] = [
             { type: 'nw', x: selectionBounds.minX, y: selectionBounds.minY },
             { type: 'ne', x: selectionBounds.maxX, y: selectionBounds.minY },
@@ -281,6 +461,7 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
 
         const hitHandle = handles.find(h => Math.hypot(h.x - pos.x, h.y - pos.y) < handleSize);
         if (hitHandle) {
+            beginGesture();
             const initialPoints: Record<string, Point> = {};
             segments.forEach(seg => {
                 (['p1', 'c1', 'c2', 'p2'] as const).forEach(t => {
@@ -320,7 +501,7 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
                                    (selectedNodeIds.has(getPointKey(seg.id, 'p2')) && p.type === 'c2');
 
           if (isAnchor || isParentSelected) {
-            if (Math.hypot(p.val.x - pos.x, p.val.y - pos.y) < HIT_RADIUS) {
+            if (Math.hypot(p.val.x - pos.x, p.val.y - pos.y) < anchorHitR) {
                hitNodes.add(getPointKey(seg.id, p.type));
                hitFound = true;
                if (isAnchor) {
@@ -336,7 +517,19 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
         }
       }
 
+      // Alt+click on an anchor toggles smooth <-> corner (Illustrator-style)
+      if (hitFound && e.altKey) {
+        const anchorKey = Array.from(hitNodes).find(k => k.endsWith('::p1') || k.endsWith('::p2'));
+        if (anchorKey) {
+          beginGesture();
+          setSegments(prev => toggleAnchorSmooth(prev, anchorKey));
+          setSelectedNodeIds(hitNodes);
+          return;
+        }
+      }
+
       if (hitFound) {
+        beginGesture();
         setIsDragging(true);
         if (e.shiftKey) {
             const newSet = new Set(selectedNodeIds);
@@ -363,6 +556,36 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
 
     } else if (tool === Tool.PEN) {
         if (!penState) {
+            // Clicking a free endpoint of an open path continues that path
+            const ep = openEndpoints.find(p => Math.hypot(p.point.x - pos.x, p.point.y - pos.y) < anchorHitR);
+            if (ep) {
+                beginGesture();
+                let pathSegs = segments.filter(s => s.pathId === ep.pathId);
+                if (ep.end === 'head') {
+                    // Continue from the head by reversing the path first
+                    pathSegs = reversePath(pathSegs);
+                    setSegments(prev => [
+                        ...prev.filter(s => s.pathId !== ep.pathId),
+                        ...pathSegs,
+                    ]);
+                }
+                const tail = pathSegs[pathSegs.length - 1];
+                setPenState({
+                    isActive: true,
+                    pathId: ep.pathId,
+                    startPoint: pathSegs[0].p1,
+                    currentPoint: ep.point,
+                    outgoingControl: ep.point,
+                    isDraggingStart: false
+                });
+                // Dragging now pulls handles out of the continuation anchor
+                setHoveredSegmentId(tail.id);
+                setIsDragging(true);
+                setSelectedNodeIds(new Set([getPointKey(tail.id, 'p2')]));
+                setHoverEndpoint(null);
+                return;
+            }
+
             const newPathId = uuidv4();
             setPenState({
                 isActive: true,
@@ -377,11 +600,44 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
             let target = pos;
             let isClosing = false;
 
-            if (Math.hypot(pos.x - penState.startPoint.x, pos.y - penState.startPoint.y) < HIT_RADIUS) {
+            if (Math.hypot(pos.x - penState.startPoint.x, pos.y - penState.startPoint.y) < anchorHitR) {
                 target = penState.startPoint;
                 isClosing = true;
+            } else {
+                // Clicking a free endpoint of ANOTHER open path joins the two paths
+                const ep = openEndpoints.find(p =>
+                    p.pathId !== penState.pathId &&
+                    Math.hypot(p.point.x - pos.x, p.point.y - pos.y) < anchorHitR);
+                if (ep) {
+                    beginGesture();
+                    const bridge: Segment = {
+                        id: uuidv4(),
+                        pathId: penState.pathId,
+                        p1: penState.currentPoint,
+                        c1: penState.outgoingControl,
+                        c2: ep.point,
+                        p2: ep.point,
+                        isSmoothP2: false,
+                        isClosed: false
+                    };
+                    setSegments(prev => {
+                        let other = prev.filter(s => s.pathId === ep.pathId);
+                        const rest = prev.filter(s => s.pathId !== ep.pathId);
+                        if (ep.end === 'tail') other = reversePath(other);
+                        return [
+                            ...rest,
+                            bridge,
+                            ...other.map(s => ({ ...s, pathId: penState.pathId })),
+                        ];
+                    });
+                    setPenState(null);
+                    setSelectedNodeIds(new Set([getPointKey(bridge.id, 'p2')]));
+                    setHoverEndpoint(null);
+                    return;
+                }
             }
 
+            beginGesture();
             const newSeg: Segment = {
                 id: uuidv4(),
                 pathId: penState.pathId,
@@ -421,6 +677,7 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
        if (hoveredSegmentId) {
         const segment = segments.find(s => s.id === hoveredSegmentId);
         if (segment) {
+          beginGesture();
           const { t } = findProjectedT(segment, pos);
           const [s1, s2] = splitSegment(segment, t);
           s1.p1 = segment.p1;
@@ -439,6 +696,7 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
       }
     } else if (tool === Tool.ERASER) {
         if (hoveredSegmentId) {
+            beginGesture();
             setSegments(segments.filter(s => s.id !== hoveredSegmentId));
             setHoveredSegmentId(null);
         }
@@ -543,29 +801,9 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
         lastDragPos.current = pos;
 
         if (tool === Tool.SELECT && selectedNodeIds.size > 0) {
+            const altKey = e.altKey;
             setSegments(prev => {
-                let updatedSegments = [...prev];
-                const pointsToMove = new Set<string>();
-
-                selectedNodeIds.forEach(key => {
-                    pointsToMove.add(key);
-                    const parts = key.split('::');
-                    if (parts.length === 2) {
-                        const segId = parts[0];
-                        const type = parts[1];
-                        if (type === 'p1') pointsToMove.add(getPointKey(segId, 'c1'));
-                        if (type === 'p2') pointsToMove.add(getPointKey(segId, 'c2'));
-                    }
-                });
-
-                updatedSegments = updatedSegments.map(seg => {
-                    const newSeg = { ...seg };
-                    if (pointsToMove.has(getPointKey(seg.id, 'p1'))) newSeg.p1 = { x: newSeg.p1.x + delta.x, y: newSeg.p1.y + delta.y };
-                    if (pointsToMove.has(getPointKey(seg.id, 'p2'))) newSeg.p2 = { x: newSeg.p2.x + delta.x, y: newSeg.p2.y + delta.y };
-                    if (pointsToMove.has(getPointKey(seg.id, 'c1'))) newSeg.c1 = { x: newSeg.c1.x + delta.x, y: newSeg.c1.y + delta.y };
-                    if (pointsToMove.has(getPointKey(seg.id, 'c2'))) newSeg.c2 = { x: newSeg.c2.x + delta.x, y: newSeg.c2.y + delta.y };
-                    return newSeg;
-                });
+                let updatedSegments = translateSelection(prev, selectedNodeIds, delta);
 
                 // Mirroring Logic
                 if (selectedNodeIds.size === 1) {
@@ -577,25 +815,38 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
                         const mainSeg = prev.find(s => s.id === segId);
 
                         if (mainSeg && (type === 'c1' || type === 'c2')) {
-                             if (type === 'c2' && mainSeg.isSmoothP2) {
-                                 const newC2 = updatedSegments.find(s => s.id === segId)!.c2;
-                                 const anchor = updatedSegments.find(s => s.id === segId)!.p2;
-                                 updatedSegments = updatedSegments.map(seg => {
-                                     if (seg.p1 === mainSeg.p2 || (Math.hypot(seg.p1.x - mainSeg.p2.x, seg.p1.y - mainSeg.p2.y) < 0.001)) {
-                                         return { ...seg, c1: reflect(newC2, anchor) };
-                                     }
-                                     return seg;
-                                 });
-                            }
-                            if (type === 'c1') {
-                                 const newC1 = updatedSegments.find(s => s.id === segId)!.c1;
-                                 const anchor = updatedSegments.find(s => s.id === segId)!.p1;
-                                 updatedSegments = updatedSegments.map(seg => {
-                                     if ((seg.p2 === mainSeg.p1 || Math.hypot(seg.p2.x - mainSeg.p1.x, seg.p2.y - mainSeg.p1.y) < 0.001) && seg.isSmoothP2) {
-                                         return { ...seg, c2: reflect(newC1, anchor) };
-                                     }
-                                     return seg;
-                                 });
+                            if (altKey) {
+                                // Alt+drag breaks the handle pair: the anchor becomes a corner
+                                if (type === 'c2') {
+                                    updatedSegments = updatedSegments.map(seg =>
+                                        seg.id === segId ? { ...seg, isSmoothP2: false } : seg);
+                                } else {
+                                    updatedSegments = updatedSegments.map(seg =>
+                                        seg.id !== segId && Math.hypot(seg.p2.x - mainSeg.p1.x, seg.p2.y - mainSeg.p1.y) < 0.001
+                                            ? { ...seg, isSmoothP2: false }
+                                            : seg);
+                                }
+                            } else {
+                                if (type === 'c2' && mainSeg.isSmoothP2) {
+                                    const newC2 = updatedSegments.find(s => s.id === segId)!.c2;
+                                    const anchor = updatedSegments.find(s => s.id === segId)!.p2;
+                                    updatedSegments = updatedSegments.map(seg => {
+                                        if (seg.p1 === mainSeg.p2 || (Math.hypot(seg.p1.x - mainSeg.p2.x, seg.p1.y - mainSeg.p2.y) < 0.001)) {
+                                            return { ...seg, c1: reflect(newC2, anchor) };
+                                        }
+                                        return seg;
+                                    });
+                                }
+                                if (type === 'c1') {
+                                    const newC1 = updatedSegments.find(s => s.id === segId)!.c1;
+                                    const anchor = updatedSegments.find(s => s.id === segId)!.p1;
+                                    updatedSegments = updatedSegments.map(seg => {
+                                        if ((seg.p2 === mainSeg.p1 || Math.hypot(seg.p2.x - mainSeg.p1.x, seg.p2.y - mainSeg.p1.y) < 0.001) && seg.isSmoothP2) {
+                                            return { ...seg, c2: reflect(newC1, anchor) };
+                                        }
+                                        return seg;
+                                    });
+                                }
                             }
                         }
                     }
@@ -607,16 +858,26 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
              if (penState?.isDraggingStart) {
                 setPenState(prev => prev ? ({ ...prev, outgoingControl: pos }) : null);
             } else if (hoveredSegmentId) {
-                setSegments(prev => prev.map(s => {
-                    if (s.id !== hoveredSegmentId) return s;
-                    return { ...s, c2: reflect(pos, s.p2), isSmoothP2: true };
-                }));
+                setSegments(prev => {
+                    const seg = prev.find(s => s.id === hoveredSegmentId);
+                    if (!seg) return prev;
+                    return prev.map(s => {
+                        if (s.id === seg.id) return { ...s, c2: reflect(pos, s.p2), isSmoothP2: true };
+                        // While closing a path, the start anchor's outgoing
+                        // handle (first segment's c1) mirrors the drag too
+                        if (seg.isClosed && s.pathId === seg.pathId &&
+                            Math.hypot(s.p1.x - seg.p2.x, s.p1.y - seg.p2.y) < 0.001) {
+                            return { ...s, c1: { ...pos } };
+                        }
+                        return s;
+                    });
+                });
                 setPenState(prev => prev ? ({ ...prev, outgoingControl: pos }) : null);
             }
         }
     } else {
       if (tool === Tool.SPLIT || tool === Tool.ERASER || tool === Tool.SELECT) {
-        let minDist = 2.0;
+        let minDist = PATH_HOVER_PX * upp;
         let closestId = null;
         segments.forEach(seg => {
             const { d } = findProjectedT(seg, pos);
@@ -628,6 +889,15 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
         setHoveredSegmentId(closestId);
       } else {
         setHoveredSegmentId(null);
+      }
+      if (tool === Tool.PEN) {
+        // Highlight continue / join targets (free endpoints of other open paths)
+        const ep = openEndpoints.find(p =>
+            p.pathId !== penState?.pathId &&
+            Math.hypot(p.point.x - pos.x, p.point.y - pos.y) < anchorHitR);
+        setHoverEndpoint(ep ? ep.point : null);
+      } else if (hoverEndpoint) {
+        setHoverEndpoint(null);
       }
     }
     setPreviewPoint(pos);
@@ -682,53 +952,106 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
               key={seg.id}
               d={segmentToSvgPath(seg)}
               fill="none"
-              stroke={hoveredSegmentId === seg.id ? (tool === Tool.ERASER ? '#525252' : '#ffffff') : "white"}
-              strokeWidth={hoveredSegmentId === seg.id ? 0.4 : 0.2}
-              className="transition-colors duration-75"
+              stroke="white"
+              strokeWidth={0.2}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
           ))}
 
+          {/* Active path highlight: thin primary-color overlay at constant screen width */}
+          {segments.map(seg => {
+            const segmentLevel = tool === Tool.ERASER || tool === Tool.SPLIT;
+            const active = segmentLevel
+              ? seg.id === hoveredSegmentId
+              : seg.pathId === hoveredPathId || selectedPathIds.has(seg.pathId);
+            if (!active) return null;
+            return (
+              <path
+                key={`hl-${seg.id}`}
+                d={segmentToSvgPath(seg)}
+                fill="none"
+                stroke={tool === Tool.ERASER ? '#ef4444' : PRIMARY_COLOR}
+                strokeWidth={1.5 * upp}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            );
+          })}
+
           {penState && tool === Tool.PEN && !isDragging && previewPoint && (
              <path
                 d={`M ${penState.currentPoint.x} ${penState.currentPoint.y} C ${penState.outgoingControl.x} ${penState.outgoingControl.y}, ${previewPoint.x} ${previewPoint.y}, ${previewPoint.x} ${previewPoint.y}`}
-                stroke="white"
-                strokeDasharray="0.2"
-                strokeWidth="0.1"
+                stroke={PRIMARY_COLOR}
+                strokeDasharray={`${3 * upp}`}
+                strokeWidth={1 * upp}
                 fill="none"
-                opacity="0.5"
+                opacity="0.8"
              />
           )}
 
           {/* Handles */}
           {segments.map(seg => {
-             const isHovered = hoveredSegmentId === seg.id;
              const isP1Selected = selectedNodeIds.has(getPointKey(seg.id, 'p1'));
              const isP2Selected = selectedNodeIds.has(getPointKey(seg.id, 'p2'));
              const isC1Selected = selectedNodeIds.has(getPointKey(seg.id, 'c1'));
              const isC2Selected = selectedNodeIds.has(getPointKey(seg.id, 'c2'));
 
-             const showHandles = tool === Tool.SELECT || (tool === Tool.PEN && isHovered);
+             // Anchors only appear on selected / hovered paths and the path being drawn
+             const pathActive = selectedPathIds.has(seg.pathId) ||
+                                seg.pathId === hoveredPathId ||
+                                penState?.pathId === seg.pathId;
+             const showHandles = (tool === Tool.SELECT || tool === Tool.PEN) && pathActive;
 
              if (!showHandles) return null;
 
              const showC1 = isP1Selected || isC1Selected;
              const showC2 = isP2Selected || isC2Selected;
 
+             const a = 3 * upp;   // anchor half-size (6px square on screen)
+             const r = 2.5 * upp; // control point radius (5px on screen)
+             const sw = 1 * upp;  // 1px stroke
+
              return (
                <g key={`handles-${seg.id}`}>
-                 {showC1 && <line x1={seg.p1.x} y1={seg.p1.y} x2={seg.c1.x} y2={seg.c1.y} stroke="#444" strokeWidth="0.05" />}
-                 {showC2 && <line x1={seg.p2.x} y1={seg.p2.y} x2={seg.c2.x} y2={seg.c2.y} stroke="#444" strokeWidth="0.05" />}
+                 {showC1 && <line x1={seg.p1.x} y1={seg.p1.y} x2={seg.c1.x} y2={seg.c1.y} stroke={PRIMARY_COLOR} strokeWidth={sw} />}
+                 {showC2 && <line x1={seg.p2.x} y1={seg.p2.y} x2={seg.c2.x} y2={seg.c2.y} stroke={PRIMARY_COLOR} strokeWidth={sw} />}
 
-                 {showC1 && <circle cx={seg.c1.x} cy={seg.c1.y} r={0.3} fill={isC1Selected ? "white" : "black"} stroke="white" strokeWidth="0.05" className="cursor-pointer hover:fill-neutral-700"/>}
-                 {showC2 && <circle cx={seg.c2.x} cy={seg.c2.y} r={0.3} fill={isC2Selected ? "white" : "black"} stroke="white" strokeWidth="0.05" className="cursor-pointer hover:fill-neutral-700"/>}
+                 {showC1 && <circle cx={seg.c1.x} cy={seg.c1.y} r={r} fill={isC1Selected ? PRIMARY_COLOR : 'white'} stroke={isC1Selected ? 'white' : PRIMARY_COLOR} strokeWidth={sw} className="cursor-pointer"/>}
+                 {showC2 && <circle cx={seg.c2.x} cy={seg.c2.y} r={r} fill={isC2Selected ? PRIMARY_COLOR : 'white'} stroke={isC2Selected ? 'white' : PRIMARY_COLOR} strokeWidth={sw} className="cursor-pointer"/>}
 
-                 <rect x={seg.p1.x - 0.2} y={seg.p1.y - 0.2} width={0.4} height={0.4} fill={isP1Selected ? "white" : "black"} stroke="white" strokeWidth="0.05" className="cursor-pointer"/>
-                 <rect x={seg.p2.x - 0.2} y={seg.p2.y - 0.2} width={0.4} height={0.4} fill={isP2Selected ? "white" : "black"} stroke="white" strokeWidth="0.05" className="cursor-pointer"/>
+                 <rect x={seg.p1.x - a} y={seg.p1.y - a} width={a * 2} height={a * 2} fill={isP1Selected ? PRIMARY_COLOR : 'white'} stroke={isP1Selected ? 'white' : PRIMARY_COLOR} strokeWidth={sw} className="cursor-pointer"/>
+                 <rect x={seg.p2.x - a} y={seg.p2.y - a} width={a * 2} height={a * 2} fill={isP2Selected ? PRIMARY_COLOR : 'white'} stroke={isP2Selected ? 'white' : PRIMARY_COLOR} strokeWidth={sw} className="cursor-pointer"/>
                </g>
              )
           })}
+
+          {/* Pen drag: live preview of the handle pair being pulled out */}
+          {tool === Tool.PEN && isDragging && (() => {
+            let anchor: Point | null = null;
+            let out: Point | null = null;
+            if (penState?.isDraggingStart) {
+              anchor = penState.startPoint;
+              out = penState.outgoingControl;
+            } else if (hoveredSegmentId) {
+              const seg = segments.find(s => s.id === hoveredSegmentId);
+              if (seg) {
+                anchor = seg.p2;
+                out = reflect(seg.c2, seg.p2);
+              }
+            }
+            if (!anchor || !out || Math.hypot(out.x - anchor.x, out.y - anchor.y) < 0.001) return null;
+            const inn = reflect(out, anchor);
+            const r = 2.5 * upp;
+            const sw = 1 * upp;
+            return (
+              <g pointerEvents="none">
+                <line x1={inn.x} y1={inn.y} x2={out.x} y2={out.y} stroke={PRIMARY_COLOR} strokeWidth={sw} />
+                <circle cx={inn.x} cy={inn.y} r={r} fill="white" stroke={PRIMARY_COLOR} strokeWidth={sw} />
+                <circle cx={out.x} cy={out.y} r={r} fill={PRIMARY_COLOR} stroke="white" strokeWidth={sw} />
+              </g>
+            );
+          })()}
 
           {/* Transform Controls */}
           {showTransform && selectionBounds && (
@@ -739,27 +1062,57 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
                     width={selectionBounds.width}
                     height={selectionBounds.height}
                     fill="none"
-                    stroke="white"
-                    strokeWidth="0.05"
-                    strokeDasharray="0.2"
+                    stroke={PRIMARY_COLOR}
+                    strokeWidth={1 * upp}
                 />
                 {/* Resize Handles */}
-                <rect x={selectionBounds.minX - 0.3} y={selectionBounds.minY - 0.3} width={0.6} height={0.6} fill="white" stroke="black" strokeWidth="0.05" className="cursor-nwse-resize"/>
-                <rect x={selectionBounds.maxX - 0.3} y={selectionBounds.minY - 0.3} width={0.6} height={0.6} fill="white" stroke="black" strokeWidth="0.05" className="cursor-nesw-resize"/>
-                <rect x={selectionBounds.minX - 0.3} y={selectionBounds.maxY - 0.3} width={0.6} height={0.6} fill="white" stroke="black" strokeWidth="0.05" className="cursor-nesw-resize"/>
-                <rect x={selectionBounds.maxX - 0.3} y={selectionBounds.maxY - 0.3} width={0.6} height={0.6} fill="white" stroke="black" strokeWidth="0.05" className="cursor-nwse-resize"/>
+                {[
+                  { x: selectionBounds.minX, y: selectionBounds.minY, cls: 'cursor-nwse-resize' },
+                  { x: selectionBounds.maxX, y: selectionBounds.minY, cls: 'cursor-nesw-resize' },
+                  { x: selectionBounds.minX, y: selectionBounds.maxY, cls: 'cursor-nesw-resize' },
+                  { x: selectionBounds.maxX, y: selectionBounds.maxY, cls: 'cursor-nwse-resize' },
+                ].map((h, i) => (
+                  <rect key={i} x={h.x - 3.5 * upp} y={h.y - 3.5 * upp} width={7 * upp} height={7 * upp} fill="white" stroke={PRIMARY_COLOR} strokeWidth={1 * upp} className={h.cls}/>
+                ))}
             </g>
           )}
 
           {penState && tool === Tool.PEN && penState.isDraggingStart && (
-              <circle cx={penState.startPoint.x} cy={penState.startPoint.y} r={0.3} fill="none" stroke="white" strokeWidth="0.1" />
+              <circle cx={penState.startPoint.x} cy={penState.startPoint.y} r={4 * upp} fill="none" stroke={PRIMARY_COLOR} strokeWidth={1.5 * upp} />
           )}
-          {penState && tool === Tool.PEN && !penState.isDraggingStart && (
-               <circle cx={penState.startPoint.x} cy={penState.startPoint.y} r={0.4} fill="none" stroke="white" strokeWidth="0.05" strokeDasharray="0.2"/>
+          {penState && tool === Tool.PEN && !penState.isDraggingStart && (() => {
+              // Highlight the start point when the cursor is close enough to close the path
+              const near = previewPoint &&
+                  Math.hypot(previewPoint.x - penState.startPoint.x, previewPoint.y - penState.startPoint.y) < anchorHitR;
+              return (
+                  <circle
+                      cx={penState.startPoint.x}
+                      cy={penState.startPoint.y}
+                      r={near ? 6 * upp : 4 * upp}
+                      fill={near ? PRIMARY_COLOR : 'none'}
+                      fillOpacity={near ? 0.4 : 0}
+                      stroke={PRIMARY_COLOR}
+                      strokeWidth={1 * upp}
+                      strokeDasharray={near ? undefined : `${2 * upp}`}
+                  />
+              );
+          })()}
+
+          {/* Continue / join target: free endpoint of an open path under the pen */}
+          {tool === Tool.PEN && hoverEndpoint && !isDragging && (
+             <circle
+                cx={hoverEndpoint.x}
+                cy={hoverEndpoint.y}
+                r={6 * upp}
+                fill={PRIMARY_COLOR}
+                fillOpacity={0.4}
+                stroke={PRIMARY_COLOR}
+                strokeWidth={1 * upp}
+             />
           )}
 
           {tool === Tool.SPLIT && hoveredSegmentId && previewPoint && (
-             <circle cx={previewPoint.x} cy={previewPoint.y} r={0.3} fill="white" opacity={0.5} />
+             <circle cx={previewPoint.x} cy={previewPoint.y} r={3 * upp} fill={PRIMARY_COLOR} opacity={0.8} />
           )}
 
           {selectionBox && (
@@ -768,11 +1121,10 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
                 y={Math.min(selectionBox.start.y, selectionBox.end.y)}
                 width={Math.abs(selectionBox.end.x - selectionBox.start.x)}
                 height={Math.abs(selectionBox.end.y - selectionBox.start.y)}
-                fill="white"
-                fillOpacity="0.1"
-                stroke="white"
-                strokeWidth="0.05"
-                strokeDasharray="0.2"
+                fill={PRIMARY_COLOR}
+                fillOpacity="0.12"
+                stroke={PRIMARY_COLOR}
+                strokeWidth={1 * upp}
               />
           )}
 

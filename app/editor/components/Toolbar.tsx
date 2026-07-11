@@ -18,9 +18,10 @@ interface ToolbarProps {
   selectedNodeIds: Set<string>;
   segments: Segment[];
   setSegments: Dispatch<SetStateAction<Segment[]>>;
+  beginGesture: () => void;
 }
 
-const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, onAddSegments, onTablerImport, selectedNodeIds, segments, setSegments }) => {
+const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, onAddSegments, onTablerImport, selectedNodeIds, segments, setSegments, beginGesture }) => {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [tablerOpen, setTablerOpen] = useState(false);
@@ -42,6 +43,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, on
   const toggleSmooth = () => {
     if (selectedNodeIds.size === 0) return;
 
+    beginGesture();
     setSegments(prev => {
         let updated = [...prev];
         const segmentsToSmooth = new Set<string>();
@@ -111,6 +113,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, on
 
     if (selectedPathIds.size === 0) return;
 
+    beginGesture();
     setSegments(prev => {
         let updated = [...prev];
         const pathsToToggle = Array.from(selectedPathIds);

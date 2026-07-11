@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
-import type { FC } from 'react';
-import { useEffect, useState } from 'react';
+import type { FC, Dispatch, SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Canvas from './components/Canvas';
 import Toolbar from './components/Toolbar';
 import { Segment, Tool } from './types';
@@ -12,13 +12,55 @@ interface EditorProps {
   onTablerImport?: (name: string) => void;
 }
 
+const MAX_HISTORY = 100;
+
 const App: FC<EditorProps> = ({ initialSegments = [], onChange, onTablerImport }) => {
-  const [segments, setSegments] = useState<Segment[]>(initialSegments);
+  const [segments, setSegmentsRaw] = useState<Segment[]>(initialSegments);
   const [tool, setTool] = useState<Tool>(Tool.SELECT);
   // Store selected nodes as strings "segmentId-pointType"
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   // Tabler icons are designed on a 24x24 grid with a 2px stroke.
   const gridSize = 24;
+
+  // --- Undo / Redo ---
+  // A gesture (drag, pen click, delete, ...) calls beginGesture() before it
+  // mutates; the snapshot is only pushed when a setSegments actually follows,
+  // so gestures that end up changing nothing don't pollute the history.
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
+  const undoStack = useRef<Segment[][]>([]);
+  const redoStack = useRef<Segment[][]>([]);
+  const pendingSnapshot = useRef<Segment[] | null>(null);
+
+  const beginGesture = useCallback(() => {
+    pendingSnapshot.current = segmentsRef.current;
+  }, []);
+
+  const setSegments = useCallback<Dispatch<SetStateAction<Segment[]>>>((action) => {
+    if (pendingSnapshot.current) {
+      undoStack.current.push(pendingSnapshot.current);
+      if (undoStack.current.length > MAX_HISTORY) undoStack.current.shift();
+      redoStack.current = [];
+      pendingSnapshot.current = null;
+    }
+    setSegmentsRaw(action);
+  }, []);
+
+  const undo = useCallback(() => {
+    const prev = undoStack.current.pop();
+    if (!prev) return;
+    redoStack.current.push(segmentsRef.current);
+    pendingSnapshot.current = null;
+    setSegmentsRaw(prev);
+  }, []);
+
+  const redo = useCallback(() => {
+    const next = redoStack.current.pop();
+    if (!next) return;
+    undoStack.current.push(segmentsRef.current);
+    pendingSnapshot.current = null;
+    setSegmentsRaw(next);
+  }, []);
 
   // Notify the parent (Edit page) so it can debounce-save to the server.
   useEffect(() => {
@@ -37,6 +79,9 @@ const App: FC<EditorProps> = ({ initialSegments = [], onChange, onTablerImport }
           gridSize={gridSize}
           selectedNodeIds={selectedNodeIds}
           setSelectedNodeIds={setSelectedNodeIds}
+          beginGesture={beginGesture}
+          undo={undo}
+          redo={redo}
         />
       </div>
 
@@ -45,13 +90,14 @@ const App: FC<EditorProps> = ({ initialSegments = [], onChange, onTablerImport }
         <Toolbar
           currentTool={tool}
           setTool={setTool}
-          onClear={() => setSegments([])}
-          onImport={(newSegments) => setSegments(newSegments)}
-          onAddSegments={(added) => setSegments((prev) => [...prev, ...added])}
+          onClear={() => { beginGesture(); setSegments([]); }}
+          onImport={(newSegments) => { beginGesture(); setSegments(newSegments); }}
+          onAddSegments={(added) => { beginGesture(); setSegments((prev) => [...prev, ...added]); }}
           onTablerImport={(name) => onTablerImport?.(name)}
           selectedNodeIds={selectedNodeIds}
           segments={segments}
           setSegments={setSegments}
+          beginGesture={beginGesture}
         />
       </div>
     </div>

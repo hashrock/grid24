@@ -11,7 +11,7 @@ import type { Point, Segment } from "../editor/types";
 
 const uid = () => crypto.randomUUID();
 
-type Seg = Omit<Segment, "selected">;
+type Seg = Segment;
 
 function seg(
   pathId: string,

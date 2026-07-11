@@ -1,7 +1,7 @@
 # grid24
 
 24×24 グリッド / 2px stroke で、ユーザーごとに stroke アイコンを作成し、公開できるサービス。
-`luma-svg-editor`（ベジェエディタ）と Hono API を「クラサバ合体」した構成で、
+ベジェエディタ（`app/editor/**`）と Hono API を「クラサバ合体」した構成で、
 アーキテクチャは [`../edane`](../edane) を踏襲しています。
 
 ## 構成
@@ -9,7 +9,7 @@
 - **Hono + @hono/inertia**（`app/server.ts`）— サーバー駆動ルーティング（Inertia ページ）＋ JSON 自動保存 API
 - **React + Inertia**（`app/client.tsx`, `app/pages/**`）— クライアント側ページ
 - **Drizzle ORM + Cloudflare D1**（`app/db/schema.ts`）— `users` / `icons` テーブル
-- **ベジェエディタ**（`app/editor/**`）— 既存の Luma SVG Editor をそのまま移植
+- **ベジェエディタ**（`app/editor/**`）— Luma SVG Editor プロトタイプから移植
 - **Cloudflare Workers** にデプロイ
 
 ### 主なルート

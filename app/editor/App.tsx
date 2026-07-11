@@ -8,9 +8,11 @@ import { Segment, Tool } from './types';
 interface EditorProps {
   initialSegments?: Segment[];
   onChange?: (segments: Segment[]) => void;
+  /** Fired when a Tabler icon is imported via the search dialog (for credit). */
+  onTablerImport?: (name: string) => void;
 }
 
-const App: FC<EditorProps> = ({ initialSegments = [], onChange }) => {
+const App: FC<EditorProps> = ({ initialSegments = [], onChange, onTablerImport }) => {
   const [segments, setSegments] = useState<Segment[]>(initialSegments);
   const [tool, setTool] = useState<Tool>(Tool.SELECT);
   // Store selected nodes as strings "segmentId-pointType"
@@ -45,6 +47,8 @@ const App: FC<EditorProps> = ({ initialSegments = [], onChange }) => {
           setTool={setTool}
           onClear={() => setSegments([])}
           onImport={(newSegments) => setSegments(newSegments)}
+          onAddSegments={(added) => setSegments((prev) => [...prev, ...added])}
+          onTablerImport={(name) => onTablerImport?.(name)}
           selectedNodeIds={selectedNodeIds}
           segments={segments}
           setSegments={setSegments}

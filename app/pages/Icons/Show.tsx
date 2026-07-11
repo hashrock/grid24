@@ -12,7 +12,20 @@ type ShowIcon = {
   isPublic: boolean;
   authorName: string | null;
   updatedAt: string;
+  /** JSON array of Tabler icon names this icon derives from, or null. */
+  tablerSources: string | null;
 };
+
+/** Tolerant parse of the stored tablerSources JSON into a string[]. */
+function parseSources(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 export default function IconsShow({
   user,
@@ -25,6 +38,7 @@ export default function IconsShow({
 }) {
   const segments = parseContent(icon.content);
   const svgString = segmentsToSvgString(segments);
+  const sources = parseSources(icon.tablerSources);
   const [copied, setCopied] = useState(false);
 
   const copySvg = async () => {
@@ -95,6 +109,37 @@ export default function IconsShow({
           <pre className="w-full overflow-x-auto rounded-lg border border-neutral-800 bg-neutral-950 p-4 text-left text-xs text-neutral-400">
             <code>{svgString}</code>
           </pre>
+
+          {sources.length > 0 && (
+            <div className="w-full rounded-lg border border-neutral-800 bg-neutral-950 p-4 text-left">
+              <p className="text-xs text-neutral-400">
+                このアイコンは{" "}
+                <a
+                  href="https://tabler.io/icons"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-neutral-200 underline hover:text-white"
+                >
+                  Tabler Icons
+                </a>{" "}
+                <span className="text-neutral-500">(MIT · © Paweł Kuna)</span>{" "}
+                をベースに制作されています。
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {sources.map((name) => (
+                  <a
+                    key={name}
+                    href={`https://tabler.io/icons/icon/${name}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded border border-neutral-700 px-2 py-0.5 text-xs text-neutral-300 hover:border-white hover:text-white"
+                  >
+                    {name}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>

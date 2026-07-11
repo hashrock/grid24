@@ -10,7 +10,20 @@ type IconData = {
   name: string;
   content: string;
   isPublic: boolean;
+  /** JSON array of Tabler icon names this icon derives from, or null. */
+  tablerSources: string | null;
 };
+
+/** Tolerant parse of the stored tablerSources JSON into a string[]. */
+function parseSources(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 type SaveStatus = "saved" | "saving" | "dirty";
 
@@ -28,12 +41,15 @@ export default function IconsEdit({
   const initialSegments = parseContent(icon.content);
   const segmentsRef = useRef<Segment[]>(initialSegments);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tabler icons this drawing was built from — persisted for public attribution.
+  const sourcesRef = useRef<Set<string>>(new Set(parseSources(icon.tablerSources)));
 
   const persist = useCallback(
     async (patch: {
       name?: string;
       content?: string;
       isPublic?: boolean;
+      tablerSources?: string[];
     }) => {
       setStatus("saving");
       try {
@@ -67,6 +83,15 @@ export default function IconsEdit({
       scheduleSave();
     },
     [initialSegments, scheduleSave]
+  );
+
+  const onTablerImport = useCallback(
+    (tablerName: string) => {
+      if (sourcesRef.current.has(tablerName)) return;
+      sourcesRef.current.add(tablerName);
+      persist({ tablerSources: [...sourcesRef.current] });
+    },
+    [persist]
   );
 
   const onNameBlur = () => {
@@ -126,7 +151,11 @@ export default function IconsEdit({
       </header>
 
       <div className="flex-1 overflow-hidden">
-        <Editor initialSegments={initialSegments} onChange={onSegmentsChange} />
+        <Editor
+          initialSegments={initialSegments}
+          onChange={onSegmentsChange}
+          onTablerImport={onTablerImport}
+        />
       </div>
     </div>
   );

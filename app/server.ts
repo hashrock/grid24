@@ -84,6 +84,7 @@ app.put("/api/icons/:id", async (c) => {
     name?: string;
     content?: string;
     isPublic?: boolean;
+    tablerSources?: string[];
   }>();
 
   await db
@@ -92,6 +93,9 @@ app.put("/api/icons/:id", async (c) => {
       ...(body.name !== undefined && { name: body.name }),
       ...(body.content !== undefined && { content: body.content }),
       ...(body.isPublic !== undefined && { isPublic: body.isPublic }),
+      ...(body.tablerSources !== undefined && {
+        tablerSources: JSON.stringify(body.tablerSources),
+      }),
       updatedAt: new Date().toISOString(),
     })
     .where(eq(icons.id, id));
@@ -178,6 +182,7 @@ const routes = app
         name: icon.name,
         content: JSON.stringify(segments),
         isPublic: true,
+        tablerSources: JSON.stringify([icon.name]),
         createdAt: now,
         updatedAt: now,
       });
@@ -215,6 +220,7 @@ const routes = app
         name: icon.name,
         content: icon.content,
         isPublic: icon.isPublic,
+        tablerSources: icon.tablerSources,
       },
     });
   })
@@ -229,6 +235,7 @@ const routes = app
         isPublic: icons.isPublic,
         userId: icons.userId,
         updatedAt: icons.updatedAt,
+        tablerSources: icons.tablerSources,
         authorName: users.name,
       })
       .from(icons)
@@ -250,6 +257,7 @@ const routes = app
         isPublic: icon.isPublic,
         authorName: icon.authorName,
         updatedAt: icon.updatedAt,
+        tablerSources: icon.tablerSources,
       },
       isOwner,
     });

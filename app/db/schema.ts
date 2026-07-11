@@ -21,6 +21,13 @@ export const icons = sqliteTable("icons", {
   /** JSON.stringify(Segment[]) — the vector data the editor round-trips. */
   content: text("content").notNull().default("[]"),
   isPublic: integer("is_public", { mode: "boolean" }).notNull().default(false),
+  /**
+   * Provenance: JSON array of Tabler icon names this icon was built from
+   * (via the "search & import" dialog). Used to credit Tabler on public pages.
+   * Null / "[]" means fully original. Over-credits by design — a name stays
+   * even if the imported strokes are later deleted.
+   */
+  tablerSources: text("tabler_sources"),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),

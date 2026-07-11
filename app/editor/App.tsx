@@ -45,6 +45,7 @@ const App: FC<EditorProps> = ({ initialSegments = [], onChange }) => {
           setTool={setTool}
           onClear={() => setSegments([])}
           onImport={(newSegments) => setSegments(newSegments)}
+          onAddSegments={(added) => setSegments((prev) => [...prev, ...added])}
           selectedNodeIds={selectedNodeIds}
           segments={segments}
           setSegments={setSegments}

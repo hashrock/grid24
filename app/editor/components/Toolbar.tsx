@@ -4,20 +4,24 @@ import { useState } from 'react';
 import { Tool, Segment } from '../types';
 import { generateIconPath } from '../services/geminiService';
 import { parsePathData } from '../utils/bezierHelper';
+import TablerImportDialog from './TablerImportDialog';
 
 interface ToolbarProps {
   currentTool: Tool;
   setTool: (t: Tool) => void;
   onClear: () => void;
   onImport: (segments: Segment[]) => void;
+  /** Append imported segments to the current canvas (does not replace). */
+  onAddSegments: (segments: Segment[]) => void;
   selectedNodeIds: Set<string>;
   segments: Segment[];
   setSegments: Dispatch<SetStateAction<Segment[]>>;
 }
 
-const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, selectedNodeIds, segments, setSegments }) => {
+const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, onAddSegments, selectedNodeIds, segments, setSegments }) => {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [tablerOpen, setTablerOpen] = useState(false);
 
   const hasApiKey = !!(import.meta as any).env?.VITE_API_KEY;
 
@@ -237,6 +241,18 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, se
           </div>
       )}
 
+      <div className="flex flex-col gap-2">
+        <h3 className="text-sm font-semibold text-neutral-400">Tabler Icons</h3>
+        <button
+          onClick={() => setTablerOpen(true)}
+          className="flex items-center justify-center gap-2 w-full py-2 px-4 rounded-md border border-neutral-800 text-sm text-neutral-300 hover:border-white hover:text-white transition-colors"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3 -4.3" /></svg>
+          検索して追加
+        </button>
+        <p className="text-[10px] text-neutral-600">選んだアイコンを今のキャンバスに追加します。</p>
+      </div>
+
       <div className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold text-neutral-400">AI Generation</h3>
         <textarea
@@ -268,6 +284,12 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, se
       <div className="text-[10px] text-neutral-700 font-mono text-center">
         Grid: 24x24px · Stroke 2px
       </div>
+
+      <TablerImportDialog
+        open={tablerOpen}
+        onClose={() => setTablerOpen(false)}
+        onPick={(segs) => onAddSegments(segs)}
+      />
     </div>
   );
 };

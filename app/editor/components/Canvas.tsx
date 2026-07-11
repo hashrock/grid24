@@ -25,6 +25,17 @@ interface PenState {
 
 type ResizeHandleType = 'nw' | 'ne' | 'sw' | 'se';
 
+interface ViewBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+// Zoom limits expressed as viewBox width (smaller = more zoomed in).
+const MIN_VIEW_W = 2;
+const MAX_VIEW_W = 200;
+
 interface ResizeState {
   handle: ResizeHandleType;
   startPos: Point;
@@ -45,6 +56,14 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
 
   // Resize State
   const [resizeState, setResizeState] = useState<ResizeState | null>(null);
+
+  // Viewport (zoom & pan) State
+  const [viewBox, setViewBox] = useState<ViewBox>(() => ({ x: -2, y: -2, w: gridSize + 4, h: gridSize + 4 }));
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const lastPanClient = useRef<{ x: number; y: number } | null>(null);
+
+  const resetView = () => setViewBox({ x: -2, y: -2, w: gridSize + 4, h: gridSize + 4 });
 
   useEffect(() => {
     if (tool !== Tool.PEN) {
@@ -69,6 +88,62 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [tool, penState, setSelectedNodeIds]);
+
+  // Space key: hold to pan with drag
+  useEffect(() => {
+    const isTyping = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      return t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable;
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !e.repeat && !isTyping(e)) {
+        e.preventDefault();
+        setIsSpacePressed(true);
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpacePressed(false);
+        setIsPanning(false);
+        lastPanClient.current = null;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Wheel zoom centered on the cursor. Native listener because React's
+  // onWheel is passive and can't preventDefault (page scroll / browser zoom).
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const CTM = svg.getScreenCTM();
+      if (!CTM) return;
+      // Cursor position in SVG user space (stays fixed while zooming)
+      const px = (e.clientX - CTM.e) / CTM.a;
+      const py = (e.clientY - CTM.f) / CTM.d;
+      // Trackpad pinch arrives as wheel + ctrlKey and feels better amplified
+      const factor = Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.002));
+      setViewBox(prev => {
+        const w = Math.min(MAX_VIEW_W, Math.max(MIN_VIEW_W, prev.w * factor));
+        const scale = w / prev.w;
+        return {
+          x: px - (px - prev.x) * scale,
+          y: py - (py - prev.y) * scale,
+          w,
+          h: prev.h * scale
+        };
+      });
+    };
+    svg.addEventListener('wheel', handleWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', handleWheel);
+  }, []);
 
   const getMousePos = (e: React.MouseEvent | React.TouchEvent): Point => {
     if (!svgRef.current) return { x: 0, y: 0 };
@@ -180,6 +255,16 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
                         (selectionBounds.width > 0 || selectionBounds.height > 0);
 
   const handlePointerDown = (e: React.MouseEvent) => {
+    // Pan: space + drag, or middle mouse button
+    if (isSpacePressed || e.button === 1) {
+      e.preventDefault(); // Stop middle-click autoscroll
+      e.stopPropagation();
+      setIsPanning(true);
+      lastPanClient.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
+    if (e.button !== 0) return;
+
     const pos = getMousePos(e);
     e.stopPropagation();
     lastDragPos.current = pos;
@@ -361,6 +446,17 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
   };
 
   const handlePointerMove = (e: React.MouseEvent) => {
+    if (isPanning && lastPanClient.current) {
+      const CTM = svgRef.current?.getScreenCTM();
+      if (CTM) {
+        const dx = (e.clientX - lastPanClient.current.x) / CTM.a;
+        const dy = (e.clientY - lastPanClient.current.y) / CTM.d;
+        setViewBox(prev => ({ ...prev, x: prev.x - dx, y: prev.y - dy }));
+      }
+      lastPanClient.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
     const pos = getMousePos(e);
 
     if (resizeState) {
@@ -538,6 +634,8 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
   };
 
   const handlePointerUp = (e: React.MouseEvent) => {
+    setIsPanning(false);
+    lastPanClient.current = null;
     setIsDragging(false);
     setSelectionBox(null);
     setResizeState(null);
@@ -561,13 +659,15 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
     return <g>{lines}</g>;
   };
 
+  const zoomPercent = Math.round(((gridSize + 4) / viewBox.w) * 100);
+  const cursorClass = isPanning ? 'cursor-grabbing' : isSpacePressed ? 'cursor-grab' : 'cursor-crosshair';
+
   return (
-    <div className="relative w-full h-full bg-black flex items-center justify-center p-8">
-      <div className="relative shadow-2xl shadow-neutral-900 rounded overflow-hidden border border-neutral-800" style={{ height: '80vh', aspectRatio: '1/1' }}>
+    <div className="relative w-full h-full bg-black overflow-hidden">
         <svg
           ref={svgRef}
-          viewBox={`-2 -2 ${gridSize + 4} ${gridSize + 4}`}
-          className="w-full h-full cursor-crosshair touch-none select-none bg-black"
+          viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+          className={`w-full h-full ${cursorClass} touch-none select-none bg-black`}
           onMouseDown={handlePointerDown}
           onMouseMove={handlePointerMove}
           onMouseUp={handlePointerUp}
@@ -677,7 +777,15 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
           )}
 
         </svg>
-      </div>
+
+      {/* Zoom indicator / reset */}
+      <button
+        onClick={resetView}
+        title="Reset view"
+        className="absolute bottom-4 right-4 text-neutral-400 text-xs bg-neutral-900 px-3 py-1 rounded-full border border-neutral-800 hover:text-white hover:border-neutral-600 select-none"
+      >
+        {zoomPercent}%
+      </button>
 
       {tool === Tool.PEN && penState && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 text-neutral-500 text-xs bg-neutral-900 px-3 py-1 rounded-full border border-neutral-800 pointer-events-none select-none">

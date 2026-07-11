@@ -13,12 +13,14 @@ interface ToolbarProps {
   onImport: (segments: Segment[]) => void;
   /** Append imported segments to the current canvas (does not replace). */
   onAddSegments: (segments: Segment[]) => void;
+  /** Record that a Tabler icon (by name) was imported, for attribution. */
+  onTablerImport: (name: string) => void;
   selectedNodeIds: Set<string>;
   segments: Segment[];
   setSegments: Dispatch<SetStateAction<Segment[]>>;
 }
 
-const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, onAddSegments, selectedNodeIds, segments, setSegments }) => {
+const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, onAddSegments, onTablerImport, selectedNodeIds, segments, setSegments }) => {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [tablerOpen, setTablerOpen] = useState(false);
@@ -288,7 +290,10 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, on
       <TablerImportDialog
         open={tablerOpen}
         onClose={() => setTablerOpen(false)}
-        onPick={(segs) => onAddSegments(segs)}
+        onPick={(segs, name) => {
+          onAddSegments(segs);
+          onTablerImport(name);
+        }}
       />
     </div>
   );

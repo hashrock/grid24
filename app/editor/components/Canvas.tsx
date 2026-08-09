@@ -174,6 +174,19 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
       return unique.length;
   }, [selectedNodeIds, segments]);
 
+  // Segments whose anchor (p1/p2) is part of the current selection.
+  // Used to highlight selected paths by colour instead of stroke width.
+  const selectedSegmentIds = useMemo(() => {
+      const ids = new Set<string>();
+      segments.forEach(seg => {
+          if (selectedNodeIds.has(getPointKey(seg.id, 'p1')) ||
+              selectedNodeIds.has(getPointKey(seg.id, 'p2'))) {
+              ids.add(seg.id);
+          }
+      });
+      return ids;
+  }, [selectedNodeIds, segments]);
+
   const showTransform = tool === Tool.SELECT &&
                         uniqueSelectedAnchors > 1 &&
                         selectionBounds &&
@@ -577,18 +590,28 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
           <rect x="0" y="0" width={gridSize} height={gridSize} fill="none" stroke="#404040" strokeWidth="0.1" />
 
           {/* Paths */}
-          {segments.map(seg => (
-            <path
-              key={seg.id}
-              d={segmentToSvgPath(seg)}
-              fill="none"
-              stroke={hoveredSegmentId === seg.id ? (tool === Tool.ERASER ? '#525252' : '#ffffff') : "white"}
-              strokeWidth={hoveredSegmentId === seg.id ? 0.4 : 0.2}
-              className="transition-colors duration-75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          ))}
+          {segments.map(seg => {
+            const isHovered = hoveredSegmentId === seg.id;
+            const isSelected = selectedSegmentIds.has(seg.id);
+            // Represent hover/selection by colour, keeping the stroke width fixed.
+            const stroke =
+              isHovered && tool === Tool.ERASER ? '#ef4444'   // deletion target
+              : isSelected ? '#3b82f6'                        // selected
+              : isHovered ? '#60a5fa'                         // hovered
+              : 'white';
+            return (
+              <path
+                key={seg.id}
+                d={segmentToSvgPath(seg)}
+                fill="none"
+                stroke={stroke}
+                strokeWidth={0.2}
+                className="transition-colors duration-75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            );
+          })}
 
           {penState && tool === Tool.PEN && !isDragging && previewPoint && (
              <path
@@ -621,11 +644,11 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
                  {showC1 && <line x1={seg.p1.x} y1={seg.p1.y} x2={seg.c1.x} y2={seg.c1.y} stroke="#444" strokeWidth="0.05" />}
                  {showC2 && <line x1={seg.p2.x} y1={seg.p2.y} x2={seg.c2.x} y2={seg.c2.y} stroke="#444" strokeWidth="0.05" />}
 
-                 {showC1 && <circle cx={seg.c1.x} cy={seg.c1.y} r={0.3} fill={isC1Selected ? "white" : "black"} stroke="white" strokeWidth="0.05" className="cursor-pointer hover:fill-neutral-700"/>}
-                 {showC2 && <circle cx={seg.c2.x} cy={seg.c2.y} r={0.3} fill={isC2Selected ? "white" : "black"} stroke="white" strokeWidth="0.05" className="cursor-pointer hover:fill-neutral-700"/>}
+                 {showC1 && <circle cx={seg.c1.x} cy={seg.c1.y} r={0.3} fill={isC1Selected ? "#3b82f6" : "black"} stroke={isC1Selected ? "#3b82f6" : "white"} strokeWidth="0.05" className="cursor-pointer hover:fill-neutral-700"/>}
+                 {showC2 && <circle cx={seg.c2.x} cy={seg.c2.y} r={0.3} fill={isC2Selected ? "#3b82f6" : "black"} stroke={isC2Selected ? "#3b82f6" : "white"} strokeWidth="0.05" className="cursor-pointer hover:fill-neutral-700"/>}
 
-                 <rect x={seg.p1.x - 0.2} y={seg.p1.y - 0.2} width={0.4} height={0.4} fill={isP1Selected ? "white" : "black"} stroke="white" strokeWidth="0.05" className="cursor-pointer"/>
-                 <rect x={seg.p2.x - 0.2} y={seg.p2.y - 0.2} width={0.4} height={0.4} fill={isP2Selected ? "white" : "black"} stroke="white" strokeWidth="0.05" className="cursor-pointer"/>
+                 <rect x={seg.p1.x - 0.2} y={seg.p1.y - 0.2} width={0.4} height={0.4} fill={isP1Selected ? "#3b82f6" : "black"} stroke={isP1Selected ? "#3b82f6" : "white"} strokeWidth="0.05" className="cursor-pointer"/>
+                 <rect x={seg.p2.x - 0.2} y={seg.p2.y - 0.2} width={0.4} height={0.4} fill={isP2Selected ? "#3b82f6" : "black"} stroke={isP2Selected ? "#3b82f6" : "white"} strokeWidth="0.05" className="cursor-pointer"/>
                </g>
              )
           })}

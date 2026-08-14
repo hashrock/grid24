@@ -33,7 +33,7 @@ export default function Gallery({
                 自分のアイコンを作る →
               </Link>
             ) : (
-              <a href="/?guest=0" className="ml-1 text-white underline">
+              <a href="/auth/google" className="ml-1 text-white underline">
                 ログインして作る →
               </a>
             )}

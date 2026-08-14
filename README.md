@@ -28,11 +28,39 @@
 
 ## 認証
 
-現在は **ダミー認証**（`DEV_BYPASS_AUTH`）で `Dev User` として動作します。
-`?guest=1` でログアウト状態をプレビューできます。
-Google OAuth への差し替えは `app/utils/session.ts` を利用して
-`app/server.ts` の auth ミドルウェアに `@hono/oauth-providers` を追加するだけです
-（edane の `app/server.ts` が参考実装）。
+**Google OAuth**（`@hono/oauth-providers/google` の `googleAuth` ミドルウェア）。
+ログイン後は HMAC 署名付きのセッション Cookie（`app/utils/session.ts`）で維持します。
+
+| ルート | 内容 |
+| --- | --- |
+| `GET /auth/google` | ログイン開始とコールバックを兼ねる。`users` に upsert してセッション発行 |
+| `GET /auth/logout` | セッション破棄 |
+
+必要な環境変数:
+
+| 変数 | 用途 |
+| --- | --- |
+| `GOOGLE_ID` / `GOOGLE_SECRET` | Google OAuth クライアント |
+| `SESSION_SECRET` | セッション Cookie の署名鍵（任意のランダム文字列） |
+
+Google Cloud Console の OAuth クライアント（種別: ウェブ アプリケーション）に、
+承認済みリダイレクト URI を登録してください:
+
+- 本番: `https://<your-worker-domain>/auth/google`
+- ローカル: `http://localhost:5173/auth/google`
+
+本番のシークレット登録:
+
+```sh
+pnpm wrangler secret put GOOGLE_ID
+pnpm wrangler secret put GOOGLE_SECRET
+pnpm wrangler secret put SESSION_SECRET
+```
+
+ローカル開発は `.dev.vars` に `DEV_BYPASS_AUTH=1` を置くと固定の `Dev User` で
+動作します（OAuth を通しません）。`?guest=1` でログアウト状態をプレビューでき、
+ローカルで実際の OAuth を試したい場合は `DEV_BYPASS_AUTH` を外して
+`GOOGLE_ID` / `GOOGLE_SECRET` / `SESSION_SECRET` を `.dev.vars` に書きます。
 
 ## 開発
 
@@ -51,7 +79,12 @@ pnpm wrangler d1 create svg-icon-editor-db
 # 2. リモートにマイグレーション適用
 pnpm migrate:remote
 
-# 3. デプロイ
+# 3. シークレットを登録（認証セクション参照）
+pnpm wrangler secret put GOOGLE_ID
+pnpm wrangler secret put GOOGLE_SECRET
+pnpm wrangler secret put SESSION_SECRET
+
+# 4. デプロイ
 pnpm deploy
 ```
 

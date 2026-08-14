@@ -31,7 +31,7 @@ export function Nav({ user }: { user: SessionUser | null }) {
             </>
           ) : (
             <a
-              href="/?guest=0"
+              href="/auth/google"
               className="rounded bg-white px-3 py-1.5 font-medium text-black hover:bg-neutral-200"
             >
               ログイン

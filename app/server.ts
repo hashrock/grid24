@@ -1,10 +1,11 @@
 import { Hono } from "hono";
 import { inertia } from "@hono/inertia";
+import { googleAuth } from "@hono/oauth-providers/google";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import { and, desc, eq } from "drizzle-orm";
 import { rootView } from "./root-view";
 import { users, icons } from "./db/schema";
-import { getSession, clearSession } from "./utils/session";
+import { getSession, setSession, clearSession } from "./utils/session";
 import { TABLER_ICONS } from "./lib/tablerIcons";
 import { pathsToSegments } from "./lib/pathImport";
 import type { Env } from "./global.d";
@@ -85,8 +86,65 @@ app.use("*", async (c, next) => {
 // --- Inertia middleware ---
 app.use(inertia({ rootView }));
 
+// --- Auth (full-page redirects, not Inertia) ---
+app.get(
+  "/auth/google",
+  // Dev bypass: no OAuth round-trip, just leave guest mode.
+  async (c, next) => {
+    if (!c.env.DEV_BYPASS_AUTH) return next();
+    c.header("Set-Cookie", "dev_guest=; Path=/; Max-Age=0; SameSite=Lax");
+    return c.redirect("/icons");
+  },
+  googleAuth({ scope: ["openid", "email", "profile"], prompt: "select_account" }),
+  async (c) => {
+    const googleUser = c.get("user-google");
+    if (!googleUser?.email) return c.redirect("/?error=auth");
+
+    const db = drizzle(c.env.DB);
+    const existing = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, googleUser.email))
+      .get();
+
+    let userId: string;
+    if (existing) {
+      userId = existing.id;
+      await db
+        .update(users)
+        .set({
+          name: googleUser.name || existing.name,
+          avatarUrl: googleUser.picture || existing.avatarUrl,
+        })
+        .where(eq(users.id, existing.id));
+    } else {
+      userId = crypto.randomUUID();
+      await db.insert(users).values({
+        id: userId,
+        email: googleUser.email,
+        name: googleUser.name || null,
+        avatarUrl: googleUser.picture || null,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    await setSession(c, {
+      id: userId,
+      email: googleUser.email,
+      name: googleUser.name || "",
+      avatarUrl: googleUser.picture || "",
+    });
+
+    return c.redirect("/icons");
+  }
+);
+
 app.get("/auth/logout", (c) => {
   clearSession(c);
+  if (c.env.DEV_BYPASS_AUTH) {
+    // Dev bypass would sign us straight back in; show the guest view instead.
+    c.header("Set-Cookie", "dev_guest=1; Path=/; SameSite=Lax", { append: true });
+  }
   return c.redirect("/");
 });
 

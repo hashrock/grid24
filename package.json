@@ -1,5 +1,5 @@
 {
-  "name": "svg-icon-editor",
+  "name": "grid24",
   "type": "module",
   "private": true,
   "scripts": {
@@ -7,8 +7,8 @@
     "build": "vite build",
     "preview": "$npm_execpath run build && vite preview",
     "deploy": "$npm_execpath run build && wrangler deploy",
-    "migrate": "wrangler d1 migrations apply svg-icon-editor-db --local",
-    "migrate:remote": "wrangler d1 migrations apply svg-icon-editor-db --remote",
+    "migrate": "wrangler d1 migrations apply grid24-db --local",
+    "migrate:remote": "wrangler d1 migrations apply grid24-db --remote",
     "generate": "drizzle-kit generate",
     "cf-typegen": "wrangler types"
   },

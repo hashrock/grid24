@@ -46,7 +46,7 @@
 Google Cloud Console の OAuth クライアント（種別: ウェブ アプリケーション）に、
 承認済みリダイレクト URI を登録してください:
 
-- 本番: `https://<your-worker-domain>/auth/google`
+- 本番: `https://grid.hashrock.info/auth/google`
 - ローカル: `http://localhost:5173/auth/google`
 
 本番のシークレット登録:
@@ -74,7 +74,7 @@ pnpm dev           # http://localhost:5173
 
 ```sh
 # 1. リモート D1 を作成し、出力された database_id を wrangler.jsonc に設定
-pnpm wrangler d1 create svg-icon-editor-db
+pnpm wrangler d1 create grid24-db
 
 # 2. リモートにマイグレーション適用
 pnpm migrate:remote

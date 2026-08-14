@@ -57,7 +57,9 @@ pnpm deploy
 
 > `wrangler.jsonc` の `database_id` はプレースホルダです。デプロイ前に実 ID に置き換えてください。
 
-## AI 生成（任意）
+## AI 生成（既定でオフ）
 
-エディタの「AI Generation」は `VITE_API_KEY`（Gemini）を設定すると有効になります。
-未設定でも他機能はすべて利用できます。
+エディタの「AI Generation」は機能フラグで隠してあります。表示するには
+`VITE_ENABLE_AI_GENERATION=1` を設定してください（`app/lib/featureFlags.ts`）。
+実際に生成するには併せて `VITE_API_KEY`（Gemini）も必要です。
+フラグがオフのあいだは UI が出ず、Gemini SDK もバンドルに含まれません。

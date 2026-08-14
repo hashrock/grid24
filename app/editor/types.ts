@@ -19,6 +19,25 @@ export interface SelectionBox {
   end: Point;
 }
 
+/**
+ * How the strokes are *rendered*. Purely a preview setting — it isn't part of
+ * the saved vector data, so changing it never alters the icon's geometry.
+ */
+export interface RenderStyle {
+  /** Stroke width in grid units (Tabler icons use 2). */
+  strokeWidth: number;
+  /** Shape of open path ends. */
+  strokeLinecap: 'butt' | 'round' | 'square';
+  /** Shape of the corners where segments meet. */
+  strokeLinejoin: 'miter' | 'round' | 'bevel';
+}
+
+export const DEFAULT_RENDER_STYLE: RenderStyle = {
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+};
+
 export enum Tool {
   SELECT = 'SELECT',
   PEN = 'PEN',

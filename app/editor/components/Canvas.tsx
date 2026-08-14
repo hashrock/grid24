@@ -2,7 +2,9 @@
 import type { FC, Dispatch, SetStateAction } from 'react';
 import { useRef, useState, useEffect, useMemo } from 'react';
 import { Segment, Point, Tool, GRID_SNAP, SelectionBox, PRIMARY_COLOR, ANCHOR_HIT_PX, PATH_HOVER_PX } from '../types';
+import type { RenderStyle } from '../types';
 import { splitSegment, findProjectedT, segmentToSvgPath } from '../utils/bezierHelper';
+import { segmentsToPaths } from '../../lib/svg';
 import { v4 as uuidv4 } from 'uuid';
 
 interface CanvasProps {
@@ -15,6 +17,8 @@ interface CanvasProps {
   beginGesture: () => void;
   undo: () => void;
   redo: () => void;
+  /** Stroke width / cap / join used for the on-canvas stroke preview. */
+  renderStyle: RenderStyle;
 }
 
 interface PenState {
@@ -116,7 +120,7 @@ interface ResizeState {
   initialPoints: Record<string, Point>;
 }
 
-const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, selectedNodeIds, setSelectedNodeIds, beginGesture, undo, redo }) => {
+const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, selectedNodeIds, setSelectedNodeIds, beginGesture, undo, redo, renderStyle }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoveredSegmentId, setHoveredSegmentId] = useState<string | null>(null);
   const [previewPoint, setPreviewPoint] = useState<Point | null>(null);
@@ -326,6 +330,20 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
 
   const getPointKey = (segId: string, type: string) => `${segId}::${type}`;
 
+  // Segment whose curve passes under `pos` (within the hover tolerance).
+  const findSegmentAt = (pos: Point): Segment | null => {
+    let minDist = PATH_HOVER_PX * upp;
+    let closest: Segment | null = null;
+    segments.forEach(seg => {
+      const { d } = findProjectedT(seg, pos);
+      if (d < minDist) {
+        minDist = d;
+        closest = seg;
+      }
+    });
+    return closest;
+  };
+
   const getAffectedKeys = (selection: Set<string>) => {
       const affected = new Set<string>();
       selection.forEach(key => {
@@ -382,6 +400,10 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
     () => segments.find(s => s.id === hoveredSegmentId)?.pathId ?? null,
     [hoveredSegmentId, segments]
   );
+
+  // Whole paths (not single segments) — caps and joins only read correctly
+  // when a path is drawn as one `d`.
+  const previewPaths = useMemo(() => segmentsToPaths(segments), [segments]);
 
   // Free endpoints of open paths (segments are kept in chain order per path).
   // Pen mode uses these to continue an existing path or join two paths.
@@ -499,8 +521,14 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
           const isAnchor = p.type === 'p1' || p.type === 'p2';
           const isParentSelected = (selectedNodeIds.has(getPointKey(seg.id, 'p1')) && p.type === 'c1') ||
                                    (selectedNodeIds.has(getPointKey(seg.id, 'p2')) && p.type === 'c2');
+          // Handles shown for a whole selected path are grabbable too — except
+          // when they sit on their anchor (straight segment), where the anchor wins.
+          const anchorOfHandle = p.type === 'c1' ? seg.p1 : seg.p2;
+          const isVisibleHandle = !isAnchor &&
+                                  selectedPathIds.has(seg.pathId) &&
+                                  Math.hypot(p.val.x - anchorOfHandle.x, p.val.y - anchorOfHandle.y) > 0.001;
 
-          if (isAnchor || isParentSelected) {
+          if (isAnchor || isParentSelected || isVisibleHandle) {
             if (Math.hypot(p.val.x - pos.x, p.val.y - pos.y) < anchorHitR) {
                hitNodes.add(getPointKey(seg.id, p.type));
                hitFound = true;
@@ -548,6 +576,29 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
             }
         }
       } else {
+        // Clicking the stroke itself selects the whole path (Illustrator-style),
+        // so it can then be dragged as one.
+        const seg = findSegmentAt(pos);
+        if (seg) {
+            beginGesture();
+            setIsDragging(true);
+            const pathKeys = new Set<string>();
+            segments.forEach(s => {
+                if (s.pathId !== seg.pathId) return;
+                pathKeys.add(getPointKey(s.id, 'p1'));
+                pathKeys.add(getPointKey(s.id, 'p2'));
+            });
+            const fullySelected = Array.from(pathKeys).every(k => selectedNodeIds.has(k));
+            if (e.shiftKey) {
+                const newSet = new Set(selectedNodeIds);
+                pathKeys.forEach(k => fullySelected ? newSet.delete(k) : newSet.add(k));
+                setSelectedNodeIds(newSet);
+            } else if (!fullySelected) {
+                setSelectedNodeIds(pathKeys);
+            }
+            return;
+        }
+
         if (!e.shiftKey) {
             setSelectedNodeIds(new Set());
         }
@@ -877,16 +928,7 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
         }
     } else {
       if (tool === Tool.SPLIT || tool === Tool.ERASER || tool === Tool.SELECT) {
-        let minDist = PATH_HOVER_PX * upp;
-        let closestId = null;
-        segments.forEach(seg => {
-            const { d } = findProjectedT(seg, pos);
-            if (d < minDist) {
-                minDist = d;
-                closestId = seg.id;
-            }
-        });
-        setHoveredSegmentId(closestId);
+        setHoveredSegmentId(findSegmentAt(pos)?.id ?? null);
       } else {
         setHoveredSegmentId(null);
       }
@@ -945,6 +987,22 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
         >
           {renderGrid()}
           <rect x="0" y="0" width={gridSize} height={gridSize} fill="none" stroke="#404040" strokeWidth="0.1" />
+
+          {/* Stroke preview: the icon as it actually renders, at the current
+              width / cap / join. Dimmed so the skeleton and handles stay readable. */}
+          <g pointerEvents="none" opacity={0.35}>
+            {previewPaths.map((d, i) => (
+              <path
+                key={`preview-${i}`}
+                d={d}
+                fill="none"
+                stroke="white"
+                strokeWidth={renderStyle.strokeWidth}
+                strokeLinecap={renderStyle.strokeLinecap}
+                strokeLinejoin={renderStyle.strokeLinejoin}
+              />
+            ))}
+          </g>
 
           {/* Paths */}
           {segments.map(seg => (
@@ -1005,11 +1063,14 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
 
              if (!showHandles) return null;
 
-             const showC1 = isP1Selected || isC1Selected;
-             const showC2 = isP2Selected || isC2Selected;
+             // A selected path shows every anchor's handles at once (like
+             // Illustrator); hovering alone only reveals the anchors.
+             const pathSelected = selectedPathIds.has(seg.pathId);
+             const showC1 = pathSelected || isP1Selected || isC1Selected;
+             const showC2 = pathSelected || isP2Selected || isC2Selected;
 
-             const a = 3 * upp;   // anchor half-size (6px square on screen)
-             const r = 2.5 * upp; // control point radius (5px on screen)
+             const a = 4 * upp;   // anchor half-size (8px square on screen)
+             const r = 3.5 * upp; // control point radius (7px on screen)
              const sw = 1 * upp;  // 1px stroke
 
              return (
@@ -1042,7 +1103,7 @@ const Canvas: FC<CanvasProps> = ({ segments, setSegments, tool, gridSize, select
             }
             if (!anchor || !out || Math.hypot(out.x - anchor.x, out.y - anchor.y) < 0.001) return null;
             const inn = reflect(out, anchor);
-            const r = 2.5 * upp;
+            const r = 3.5 * upp;
             const sw = 1 * upp;
             return (
               <g pointerEvents="none">

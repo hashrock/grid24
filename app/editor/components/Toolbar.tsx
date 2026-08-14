@@ -1,9 +1,11 @@
 /** @jsxImportSource react */
 import type { FC, Dispatch, SetStateAction, ReactNode } from 'react';
 import { useState } from 'react';
-import { Tool, Segment } from '../types';
-import { generateIconPath } from '../services/geminiService';
+import { DEFAULT_RENDER_STYLE, Tool, Segment } from '../types';
+import type { RenderStyle } from '../types';
 import { parsePathData } from '../utils/bezierHelper';
+import { IconSvg } from '../../lib/IconSvg';
+import { AI_GENERATION_ENABLED } from '../../lib/featureFlags';
 import TablerImportDialog from './TablerImportDialog';
 
 interface ToolbarProps {
@@ -19,9 +21,16 @@ interface ToolbarProps {
   segments: Segment[];
   setSegments: Dispatch<SetStateAction<Segment[]>>;
   beginGesture: () => void;
+  /** Stroke rendering preview settings (width / cap / join). */
+  renderStyle: RenderStyle;
+  setRenderStyle: Dispatch<SetStateAction<RenderStyle>>;
 }
 
-const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, onAddSegments, onTablerImport, selectedNodeIds, segments, setSegments, beginGesture }) => {
+const CAPS: RenderStyle['strokeLinecap'][] = ['butt', 'round', 'square'];
+const JOINS: RenderStyle['strokeLinejoin'][] = ['miter', 'round', 'bevel'];
+const PREVIEW_SIZES = [16, 24, 48];
+
+const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, onAddSegments, onTablerImport, selectedNodeIds, segments, setSegments, beginGesture, renderStyle, setRenderStyle }) => {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [tablerOpen, setTablerOpen] = useState(false);
@@ -31,6 +40,8 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, on
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
     setIsGenerating(true);
+    // フラグが立っているときだけ Gemini SDK を読み込む（既定ではバンドルに含めない）
+    const { generateIconPath } = await import('../services/geminiService');
     const pathData = await generateIconPath(prompt);
     setIsGenerating(false);
 
@@ -168,6 +179,32 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, on
       }
   }
 
+  const OptionRow = ({ label, options, value, onPick }: {
+    label: string;
+    options: readonly string[];
+    value: string;
+    onPick: (v: string) => void;
+  }) => (
+    <div className="flex flex-col gap-1">
+      <label className="text-[10px] font-bold uppercase text-neutral-600">{label}</label>
+      <div className="flex gap-1">
+        {options.map(opt => (
+          <button
+            key={opt}
+            onClick={() => onPick(opt)}
+            className={`flex-1 rounded border py-1.5 text-[11px] capitalize transition-colors ${
+              value === opt
+                ? 'border-white bg-neutral-900 text-white'
+                : 'border-neutral-800 text-neutral-500 hover:border-neutral-600 hover:text-white'
+            }`}
+          >
+            {opt}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   const ToolButton = ({ tool, label, icon }: { tool: Tool, label: string, icon: ReactNode }) => (
     <button
       onClick={() => setTool(tool)}
@@ -246,6 +283,64 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, on
           </div>
       )}
 
+      {/* Stroke rendering — preview only, never changes the saved geometry. */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-neutral-400">Stroke</h3>
+          <button
+            onClick={() => setRenderStyle(DEFAULT_RENDER_STYLE)}
+            className="text-[10px] font-bold uppercase text-neutral-600 hover:text-white"
+            title="既定 (2 / round / round) に戻す"
+          >
+            Reset
+          </button>
+        </div>
+
+        <div className="flex items-end justify-center gap-5 rounded border border-neutral-900 bg-neutral-950 py-4 text-white">
+          {PREVIEW_SIZES.map(size => (
+            <div key={size} className="flex flex-col items-center gap-2">
+              <IconSvg
+                segments={segments}
+                size={size}
+                strokeWidth={renderStyle.strokeWidth}
+                strokeLinecap={renderStyle.strokeLinecap}
+                strokeLinejoin={renderStyle.strokeLinejoin}
+              />
+              <span className="font-mono text-[10px] text-neutral-600">{size}px</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-bold uppercase text-neutral-600">Width</label>
+            <span className="font-mono text-xs text-white">{renderStyle.strokeWidth.toFixed(2)}</span>
+          </div>
+          <input
+            type="range"
+            min={0.25}
+            max={4}
+            step={0.25}
+            value={renderStyle.strokeWidth}
+            onChange={(e) => setRenderStyle(prev => ({ ...prev, strokeWidth: Number(e.target.value) }))}
+            className="w-full accent-white"
+          />
+        </div>
+
+        <OptionRow
+          label="Cap"
+          options={CAPS}
+          value={renderStyle.strokeLinecap}
+          onPick={(v) => setRenderStyle(prev => ({ ...prev, strokeLinecap: v as RenderStyle['strokeLinecap'] }))}
+        />
+        <OptionRow
+          label="Join (corner)"
+          options={JOINS}
+          value={renderStyle.strokeLinejoin}
+          onPick={(v) => setRenderStyle(prev => ({ ...prev, strokeLinejoin: v as RenderStyle['strokeLinejoin'] }))}
+        />
+      </div>
+
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-semibold text-neutral-400">Tabler Icons</h3>
         <button
@@ -258,6 +353,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, on
         <p className="text-[10px] text-neutral-600">選んだアイコンを今のキャンバスに追加します。</p>
       </div>
 
+      {AI_GENERATION_ENABLED && (
       <div className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold text-neutral-400">AI Generation</h3>
         <textarea
@@ -281,13 +377,14 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onClear, onImport, on
              <p className="text-[10px] text-neutral-600">API Key missing. AI Disabled.</p>
         )}
       </div>
+      )}
 
       <div className="mt-auto flex flex-col gap-2">
          <button onClick={onClear} className="w-full py-2 border border-neutral-800 rounded text-xs text-neutral-500 hover:text-white hover:border-white transition-colors">Clear Canvas</button>
       </div>
 
       <div className="text-[10px] text-neutral-700 font-mono text-center">
-        Grid: 24x24px · Stroke 2px
+        Grid: 24x24px · Stroke {renderStyle.strokeWidth}px
       </div>
 
       <TablerImportDialog

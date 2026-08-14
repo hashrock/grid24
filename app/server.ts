@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { inertia } from "@hono/inertia";
-import { drizzle } from "drizzle-orm/d1";
+import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import { and, desc, eq } from "drizzle-orm";
 import { rootView } from "./root-view";
 import { users, icons } from "./db/schema";
@@ -15,6 +15,28 @@ const DEV_USER = {
   name: "Dev User",
   avatarUrl: "",
 };
+
+/**
+ * First-run seed: a few Tabler starter icons, inserted when a user opens their
+ * (still empty) dashboard, so there's something to open and edit right away.
+ * They start private, like any newly created icon.
+ */
+const STARTER_ICON_COUNT = 3;
+
+async function seedStarterIcons(db: DrizzleD1Database, userId: string) {
+  const now = new Date().toISOString();
+  const rows = TABLER_ICONS.slice(0, STARTER_ICON_COUNT).map((icon) => ({
+    id: crypto.randomUUID(),
+    userId,
+    name: icon.name,
+    content: JSON.stringify(pathsToSegments(icon.paths)),
+    isPublic: false,
+    tablerSources: JSON.stringify([icon.name]),
+    createdAt: now,
+    updatedAt: now,
+  }));
+  if (rows.length > 0) await db.insert(icons).values(rows);
+}
 
 const app = new Hono<Env>();
 
@@ -128,17 +150,23 @@ const routes = app
     const user = c.get("user");
     if (!user) return c.redirect("/");
     const db = drizzle(c.env.DB);
-    const myIcons = await db
-      .select({
-        id: icons.id,
-        name: icons.name,
-        content: icons.content,
-        isPublic: icons.isPublic,
-        updatedAt: icons.updatedAt,
-      })
-      .from(icons)
-      .where(eq(icons.userId, user.id))
-      .orderBy(desc(icons.updatedAt));
+    const listMine = () =>
+      db
+        .select({
+          id: icons.id,
+          name: icons.name,
+          content: icons.content,
+          isPublic: icons.isPublic,
+          updatedAt: icons.updatedAt,
+        })
+        .from(icons)
+        .where(eq(icons.userId, user.id))
+        .orderBy(desc(icons.updatedAt));
+    let myIcons = await listMine();
+    if (myIcons.length === 0) {
+      await seedStarterIcons(db, user.id);
+      myIcons = await listMine();
+    }
     return c.render("Icons/Index", { user, icons: myIcons });
   })
   .post("/icons", async (c) => {
@@ -160,34 +188,6 @@ const routes = app
       updatedAt: now,
     });
     return c.redirect(`/icons/${id}/edit`, 303);
-  })
-  // Import the built-in Tabler starter icons for the current user. Skips any
-  // already imported (matched by name). Imported icons start public.
-  .post("/icons/import-tabler", async (c) => {
-    const user = c.get("user");
-    if (!user) return c.redirect("/");
-    const db = drizzle(c.env.DB);
-    const existing = await db
-      .select({ name: icons.name })
-      .from(icons)
-      .where(eq(icons.userId, user.id));
-    const have = new Set(existing.map((r) => r.name));
-    const now = new Date().toISOString();
-    for (const icon of TABLER_ICONS) {
-      if (have.has(icon.name)) continue;
-      const segments = pathsToSegments(icon.paths);
-      await db.insert(icons).values({
-        id: crypto.randomUUID(),
-        userId: user.id,
-        name: icon.name,
-        content: JSON.stringify(segments),
-        isPublic: true,
-        tablerSources: JSON.stringify([icon.name]),
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-    return c.redirect("/icons", 303);
   })
   .delete("/icons/:id", async (c) => {
     const user = c.get("user");

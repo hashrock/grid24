@@ -1,16 +1,20 @@
 import type { Segment } from "../editor/types";
 import { segmentsToPaths } from "./svg";
 
-/** Renders a stroke icon (32x32 grid) as inline SVG. Uses currentColor. */
+/** Renders a stroke icon (24x24 grid) as inline SVG. Uses currentColor. */
 export function IconSvg({
   segments,
   size = 32,
   strokeWidth = 2,
+  strokeLinecap = "round",
+  strokeLinejoin = "round",
   className,
 }: {
   segments: Segment[];
   size?: number;
   strokeWidth?: number;
+  strokeLinecap?: "butt" | "round" | "square";
+  strokeLinejoin?: "miter" | "round" | "bevel";
   className?: string;
 }) {
   const paths = segmentsToPaths(segments);
@@ -23,8 +27,8 @@ export function IconSvg({
       fill="none"
       stroke="currentColor"
       strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      strokeLinecap={strokeLinecap}
+      strokeLinejoin={strokeLinejoin}
     >
       {paths.map((d, i) => (
         <path key={i} d={d} />

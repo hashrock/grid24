@@ -23,10 +23,6 @@ export default function IconsIndex({
     router.post("/icons", { name: "Untitled" });
   };
 
-  const importTabler = () => {
-    router.post("/icons/import-tabler", {}, { preserveScroll: true });
-  };
-
   const deleteIcon = (icon: MyIcon) => {
     if (!confirm(`「${icon.name}」を削除しますか？`)) return;
     router.delete(`/icons/${icon.id}`, { preserveScroll: true });
@@ -39,21 +35,12 @@ export default function IconsIndex({
       <main className="mx-auto max-w-5xl px-6 py-10">
         <div className="anim-header mb-8 flex items-center justify-between">
           <h1 className="text-3xl font-bold">マイアイコン</h1>
-          <div className="flex gap-2">
-            <button
-              onClick={importTabler}
-              className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:border-white"
-              title="Tabler のスターターアイコン(24x24)をインポート"
-            >
-              Tablerをインポート
-            </button>
-            <button
-              onClick={createIcon}
-              className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black hover:bg-neutral-200"
-            >
-              + 新規作成
-            </button>
-          </div>
+          <button
+            onClick={createIcon}
+            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black hover:bg-neutral-200"
+          >
+            + 新規作成
+          </button>
         </div>
 
         {icons.length === 0 ? (

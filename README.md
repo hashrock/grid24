@@ -90,6 +90,22 @@ pnpm deploy
 
 > `wrangler.jsonc` の `database_id` はプレースホルダです。デプロイ前に実 ID に置き換えてください。
 
+### 自動デプロイ（GitHub Actions）
+
+`main` への push で `.github/workflows/deploy.yml` が走り、ビルド → リモート D1
+マイグレーション適用 → `wrangler deploy` を実行します。手動実行も可能です
+（Actions タブの Run workflow）。
+
+リポジトリの Settings → Secrets and variables → Actions に以下を登録してください。
+
+| Secret | 内容 |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Edit Cloudflare Workers 権限 + D1 Edit 権限のトークン |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare ダッシュボード右サイドの Account ID |
+
+`GOOGLE_ID` などのアプリ側シークレットは Worker 側に保存済みのものが使われるため、
+GitHub には登録不要です。
+
 ## AI 生成（既定でオフ）
 
 エディタの「AI Generation」は機能フラグで隠してあります。表示するには

@@ -1,13 +1,15 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "svg-icon-editor",
+  "name": "grid24",
   "main": "./app/server.ts",
   "compatibility_date": "2025-08-03",
   "compatibility_flags": ["nodejs_compat"],
+  // Custom domain on the hashrock.info zone; wrangler creates the DNS record.
+  "routes": [{ "pattern": "grid.hashrock.info", "custom_domain": true }],
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "svg-icon-editor-db",
+      "database_name": "grid24-db",
       "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
     }
   ]

@@ -92,8 +92,8 @@ pnpm deploy
 
 ### 自動デプロイ（GitHub Actions）
 
-`main` への push で `.github/workflows/deploy.yml` が走り、ビルド → リモート D1
-マイグレーション適用 → `wrangler deploy` を実行します。手動実行も可能です
+`main` への push で `.github/workflows/deploy.yml` が走り、型チェック → ビルド →
+リモート D1 マイグレーション適用 → `wrangler deploy` を実行します。手動実行も可能です
 （Actions タブの Run workflow）。
 
 リポジトリの Settings → Secrets and variables → Actions に以下を登録してください。

@@ -266,7 +266,13 @@ export function docReducer(state: DocState, action: DocAction): DocState {
         state,
         mapPath(state.paths, path.id, (p) =>
           mapPathSegments(p, (s) => {
-            if (s.id === segment.id) return { ...s, c2: reflect(action.point, s.p2), isSmoothP2: true };
+            if (s.id === segment.id) {
+              // Alt: leave the incoming handle exactly where it is and drop the
+              // smooth flag. Already-broken is a no-op so a held Alt doesn't
+              // churn state on every pointer move.
+              if (action.break) return s.isSmoothP2 ? { ...s, isSmoothP2: false } : s;
+              return { ...s, c2: reflect(action.point, s.p2), isSmoothP2: true };
+            }
             if (wrap && s.id === wrap.id) return { ...s, c1: { ...action.point } };
             return s;
           })

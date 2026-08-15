@@ -490,6 +490,60 @@ describe('docReducer', () => {
       expect(byId(next, 'P1').c1).toEqual(pt(3, 3));
     });
 
+    it('dragHandle with Alt freezes the incoming handle and drops the smooth flag', () => {
+      // Handles already pulled out symmetrically, then Alt is pressed.
+      const before = doc([
+        path('P', [curve('a', pt(0, 0), pt(0, 0), pt(7, -4), pt(10, 0), { isSmoothP2: true })]),
+      ]);
+      const next = docReducer(before, {
+        type: 'pen/dragHandle',
+        segmentId: 'a',
+        point: pt(20, 20),
+        break: true,
+      });
+      expect(byId(next, 'a').c2).toEqual(pt(7, -4));
+      expect(byId(next, 'a').isSmoothP2).toBe(false);
+    });
+
+    it('dragHandle with Alt is a no-op once the junction is already a corner', () => {
+      // A held Alt fires on every pointer move; none of them may add history.
+      const before = doc([
+        path('P', [curve('a', pt(0, 0), pt(0, 0), pt(7, -4), pt(10, 0), { isSmoothP2: false })]),
+      ]);
+      expect(
+        docReducer(before, { type: 'pen/dragHandle', segmentId: 'a', point: pt(20, 20), break: true })
+      ).toBe(before);
+    });
+
+    it('dragHandle with Alt still drives the outgoing handle across a closing seam', () => {
+      // The cursor always owns the outgoing handle; Alt only cuts the incoming one.
+      const loop = polyline('P', [pt(0, 0), pt(10, 0), pt(0, 0)], true);
+      const next = docReducer(doc([loop]), {
+        type: 'pen/dragHandle',
+        segmentId: 'P2',
+        point: pt(3, 3),
+        break: true,
+      });
+      expect(byId(next, 'P1').c1).toEqual(pt(3, 3));
+      expect(byId(next, 'P2').c2).toEqual(pt(0, 0));
+      // Unset and false both read as "corner"; the flag is optional.
+      expect(byId(next, 'P2').isSmoothP2).toBeFalsy();
+    });
+
+    it('releasing Alt re-mirrors the pair', () => {
+      const before = doc([
+        path('P', [curve('a', pt(0, 0), pt(0, 0), pt(7, -4), pt(10, 0), { isSmoothP2: false })]),
+      ]);
+      const next = docReducer(before, {
+        type: 'pen/dragHandle',
+        segmentId: 'a',
+        point: pt(13, 4),
+        break: false,
+      });
+      expect(byId(next, 'a').c2).toEqual(pt(7, -4));
+      expect(byId(next, 'a').isSmoothP2).toBe(true);
+    });
+
     it('dragHandle is a no-op for an unknown segment', () => {
       const before = doc([polyline('P', [pt(0, 0), pt(10, 0)])]);
       expect(docReducer(before, { type: 'pen/dragHandle', segmentId: 'x', point: pt(1, 1) })).toBe(before);

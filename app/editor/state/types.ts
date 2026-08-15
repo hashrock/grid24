@@ -57,8 +57,12 @@ export type DocAction =
       control: Point;
       target: { pathId: string; end: 'head' | 'tail'; point: Point };
     }
-  /** Pen: pull handles out of the anchor just placed. */
-  | { type: 'pen/dragHandle'; segmentId: string; point: Point }
+  /**
+   * Pen: pull handles out of the anchor just placed. `point` always drives the
+   * *outgoing* handle; `break` (Alt) decouples the incoming one, freezing it
+   * where it is and turning the junction into a corner.
+   */
+  | { type: 'pen/dragHandle'; segmentId: string; point: Point; break?: boolean }
   | { type: 'selection/set'; keys: Iterable<NodeKey> }
   | { type: 'selection/toggle'; keys: Iterable<NodeKey> }
   /** Select every anchor of a path — clicking its stroke in object mode. */

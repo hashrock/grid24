@@ -184,6 +184,31 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [tool, penState, selection, dispatch]);
 
+  // Alt pressed or released mid-drag re-applies the break at the last cursor
+  // position. Without this the change would only land on the next pointer move,
+  // so holding Alt without moving would look like it did nothing.
+  useEffect(() => {
+    if (tool !== Tool.PEN || !isDragging || !hoveredSegmentId) return;
+    const onAlt = (e: KeyboardEvent) => {
+      if (e.key !== 'Alt' || e.repeat) return;
+      const pos = previewPoint;
+      if (!pos) return;
+      dispatch({
+        type: 'pen/dragHandle',
+        segmentId: hoveredSegmentId,
+        point: pos,
+        break: e.type === 'keydown',
+        mergeKey: currentGesture(),
+      });
+    };
+    window.addEventListener('keydown', onAlt);
+    window.addEventListener('keyup', onAlt);
+    return () => {
+      window.removeEventListener('keydown', onAlt);
+      window.removeEventListener('keyup', onAlt);
+    };
+  }, [tool, isDragging, hoveredSegmentId, previewPoint, dispatch]);
+
   // Space key: hold to pan with drag
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -641,6 +666,8 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
                     type: 'pen/dragHandle',
                     segmentId: hoveredSegmentId,
                     point: pos,
+                    // Alt decouples the incoming handle: "straight in, curve out".
+                    break: e.altKey,
                     mergeKey: currentGesture(),
                 });
                 setPenState(prev => prev ? ({ ...prev, outgoingControl: pos }) : null);
@@ -810,27 +837,34 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
 
           {/* Pen drag: live preview of the handle pair being pulled out */}
           {tool === Tool.PEN && isDragging && (() => {
+            // The two handles are drawn independently, not as a mirrored pair:
+            // once Alt breaks them apart they no longer line up.
             let anchor: Point | null = null;
             let out: Point | null = null;
+            let inn: Point | null = null;
             if (penState?.isDraggingStart) {
               anchor = penState.startPoint;
               out = penState.outgoingControl;
+              inn = reflect(out, anchor); // no incoming segment yet — phantom
             } else if (hoveredSegmentId) {
               const seg = placed.find(item => item.segment.id === hoveredSegmentId)?.segment;
               if (seg) {
                 anchor = seg.p2;
-                out = reflect(seg.c2, seg.p2);
+                inn = seg.c2;
+                out = penState?.outgoingControl ?? reflect(seg.c2, seg.p2);
               }
             }
-            if (!anchor || !out || Math.hypot(out.x - anchor.x, out.y - anchor.y) < 0.001) return null;
-            const inn = reflect(out, anchor);
+            if (!anchor || !out || !inn) return null;
+            const grown = (p: Point) => Math.hypot(p.x - anchor!.x, p.y - anchor!.y) >= 0.001;
+            if (!grown(out) && !grown(inn)) return null;
             const r = 3.5 * upp;
             const sw = 1 * upp;
             return (
               <g pointerEvents="none">
-                <line x1={inn.x} y1={inn.y} x2={out.x} y2={out.y} stroke={PRIMARY_COLOR} strokeWidth={sw} />
-                <circle cx={inn.x} cy={inn.y} r={r} fill="white" stroke={PRIMARY_COLOR} strokeWidth={sw} />
-                <circle cx={out.x} cy={out.y} r={r} fill={PRIMARY_COLOR} stroke="white" strokeWidth={sw} />
+                {grown(inn) && <line x1={anchor.x} y1={anchor.y} x2={inn.x} y2={inn.y} stroke={PRIMARY_COLOR} strokeWidth={sw} />}
+                {grown(out) && <line x1={anchor.x} y1={anchor.y} x2={out.x} y2={out.y} stroke={PRIMARY_COLOR} strokeWidth={sw} />}
+                {grown(inn) && <circle cx={inn.x} cy={inn.y} r={r} fill="white" stroke={PRIMARY_COLOR} strokeWidth={sw} />}
+                {grown(out) && <circle cx={out.x} cy={out.y} r={r} fill={PRIMARY_COLOR} stroke="white" strokeWidth={sw} />}
               </g>
             );
           })()}
@@ -922,8 +956,10 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
       </button>
 
       {tool === Tool.PEN && penState && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-neutral-500 text-xs bg-neutral-900 px-3 py-1 rounded-full border border-neutral-800 pointer-events-none select-none">
-              Press ESC to finish path
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 text-neutral-500 text-xs bg-neutral-900 px-3 py-1 rounded-full border border-neutral-800 pointer-events-none select-none">
+              <span>ESC で確定</span>
+              <span className="text-neutral-700">·</span>
+              <span>ドラッグ中 <kbd className="font-mono text-neutral-400">Alt</kbd> でコーナー</span>
           </div>
       )}
     </div>

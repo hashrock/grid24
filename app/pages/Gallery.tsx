@@ -53,7 +53,7 @@ export default function Gallery({
                 className="anim-item group flex flex-col items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-900/50 p-5 transition-colors hover:border-neutral-600"
               >
                 <div className="text-white transition-transform group-hover:scale-110">
-                  <IconSvg segments={parseContent(icon.content)} size={48} />
+                  <IconSvg paths={parseContent(icon.content)} size={48} />
                 </div>
                 <div className="w-full text-center">
                   <div className="truncate text-sm font-medium">{icon.name}</div>

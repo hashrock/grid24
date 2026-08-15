@@ -23,7 +23,7 @@
 | `PUT /api/icons/:id` | 自動保存（name / content / isPublic） |
 | `GET /i/:id` | 個別公開ページ（公開 or 所有者のみ） |
 
-アイコンの内容はエディタの `Segment[]` を JSON で `icons.content` に保存し、
+アイコンの内容はフラットな `Segment[]` を JSON で `icons.content` に保存し、
 公開時は `app/lib/svg.ts` で SVG に変換して描画します。
 
 ## 認証
@@ -73,6 +73,10 @@ pnpm test          # エディタ reducer のテスト（vitest）
 
 エディタの編集操作はすべて `app/editor/state/` の reducer に集約されています。
 純関数なので `pnpm test` は React もブラウザも起動せずに走ります。
+
+ベクターデータは `Path[]`（`Path` が `Segment[]` を chain 順に持つ）で扱います。
+D1 に保存されるのは旧来のフラットな `Segment[]`（`pathId` / `isClosed` 付き）のままで、
+変換は `app/lib/svg.ts` に閉じています。
 
 ## デプロイ
 

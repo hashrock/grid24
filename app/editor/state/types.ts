@@ -1,4 +1,4 @@
-import type { Point, Segment } from '../types';
+import type { Path, Point } from '../types';
 
 /** The four points that make up a cubic segment. */
 export type NodeType = 'p1' | 'c1' | 'c2' | 'p2';
@@ -12,7 +12,7 @@ export type NodeKey = string;
  * deliberately lives outside, in component state.
  */
 export interface DocState {
-  segments: Segment[];
+  paths: Path[];
   selection: ReadonlySet<NodeKey>;
 }
 
@@ -27,10 +27,10 @@ export type MirrorMode =
  * it in `HISTORIC` (state/history.ts), so nothing can silently skip undo.
  */
 export type DocAction =
-  /** Wholesale replace: Clear Canvas, path import, AI generation. */
-  | { type: 'segments/replace'; segments: Segment[] }
+  /** Wholesale replace: Clear Canvas, path import. */
+  | { type: 'paths/replace'; paths: Path[] }
   /** Append without touching what's already on the canvas (Tabler import). */
-  | { type: 'segments/append'; segments: Segment[] }
+  | { type: 'paths/append'; paths: Path[] }
   /** Move the selection by `delta` (drag or arrow keys). */
   | { type: 'nodes/translate'; delta: Point; mirror?: MirrorMode }
   /** Scale the selection from a fixed origin (transform box handles). */
@@ -46,7 +46,7 @@ export type DocAction =
   /** Cut one segment in two at curve parameter `t`. */
   | { type: 'segment/split'; segmentId: string; t: number; ids: [string, string] }
   | { type: 'segment/erase'; segmentId: string }
-  /** Pen: append a segment to the path being drawn. */
+  /** Pen: append a segment to the path being drawn, creating it if needed. */
   | { type: 'pen/commit'; id: string; pathId: string; from: Point; control: Point; to: Point; closing: boolean }
   /** Pen: bridge to a free endpoint of another path and merge the two. */
   | {

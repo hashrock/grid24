@@ -1,13 +1,13 @@
 /** @jsxImportSource react */
 import type { FC, Dispatch, SetStateAction, ReactNode } from 'react';
 import { useState } from 'react';
-import { DEFAULT_RENDER_STYLE, Tool, Segment } from '../types';
+import { DEFAULT_RENDER_STYLE, Tool, Path } from '../types';
 import type { RenderStyle } from '../types';
-import { parsePathData } from '../utils/bezierHelper';
+import { parsePathData } from '../../lib/pathImport';
 import { IconSvg } from '../../lib/IconSvg';
 import { AI_GENERATION_ENABLED } from '../../lib/featureFlags';
 import TablerImportDialog from './TablerImportDialog';
-import { incomingAt, parseNodeKey } from '../state';
+import { locateSegment, parseNodeKey } from '../state';
 import type { EditorAction, NodeKey } from '../state';
 
 interface ToolbarProps {
@@ -15,7 +15,7 @@ interface ToolbarProps {
   setTool: (t: Tool) => void;
   /** Record that a Tabler icon (by name) was imported, for attribution. */
   onTablerImport?: (name: string) => void;
-  segments: Segment[];
+  paths: Path[];
   selection: ReadonlySet<NodeKey>;
   dispatch: Dispatch<EditorAction>;
   /** Stroke rendering preview settings (width / cap / join). */
@@ -27,7 +27,7 @@ const CAPS: RenderStyle['strokeLinecap'][] = ['butt', 'round', 'square'];
 const JOINS: RenderStyle['strokeLinejoin'][] = ['miter', 'round', 'bevel'];
 const PREVIEW_SIZES = [16, 24, 48];
 
-const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, segments, selection, dispatch, renderStyle, setRenderStyle }) => {
+const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths, selection, dispatch, renderStyle, setRenderStyle }) => {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [tablerOpen, setTablerOpen] = useState(false);
@@ -43,7 +43,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, segme
     setIsGenerating(false);
 
     if (pathData) {
-      dispatch({ type: 'segments/replace', segments: parsePathData(pathData) });
+      dispatch({ type: 'paths/replace', paths: parsePathData(pathData) });
     }
   };
 
@@ -55,11 +55,19 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, segme
 
   if (hasSelection) {
       const parsed = parseNodeKey(selection.values().next().value as NodeKey);
-      const s = parsed && segments.find(i => i.id === parsed.segmentId);
-      if (parsed && s) {
-          isClosed = !!s.isClosed;
-          if (parsed.type === 'p2') isSmooth = !!s.isSmoothP2;
-          else if (parsed.type === 'p1') isSmooth = !!incomingAt(segments, s.p1)?.isSmoothP2;
+      const found = parsed && locateSegment(paths, parsed.segmentId);
+      if (parsed && found) {
+          const { path, segment, index } = found;
+          isClosed = path.closed;
+          // The junction flag lives on the segment arriving at the anchor.
+          const owner = parsed.type === 'p2'
+            ? segment
+            : index > 0
+              ? path.segments[index - 1]
+              : path.closed
+                ? path.segments[path.segments.length - 1]
+                : null;
+          isSmooth = !!owner?.isSmoothP2;
       }
   }
 
@@ -184,7 +192,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, segme
           {PREVIEW_SIZES.map(size => (
             <div key={size} className="flex flex-col items-center gap-2">
               <IconSvg
-                segments={segments}
+                paths={paths}
                 size={size}
                 strokeWidth={renderStyle.strokeWidth}
                 strokeLinecap={renderStyle.strokeLinecap}
@@ -265,7 +273,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, segme
 
       <div className="mt-auto flex flex-col gap-2">
          <button
-            onClick={() => dispatch({ type: 'segments/replace', segments: [] })}
+            onClick={() => dispatch({ type: 'paths/replace', paths: [] })}
             className="w-full py-2 border border-neutral-800 rounded text-xs text-neutral-500 hover:text-white hover:border-white transition-colors"
          >
             Clear Canvas
@@ -279,8 +287,8 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, segme
       <TablerImportDialog
         open={tablerOpen}
         onClose={() => setTablerOpen(false)}
-        onPick={(segs, name) => {
-          dispatch({ type: 'segments/append', segments: segs });
+        onPick={(picked, name) => {
+          dispatch({ type: 'paths/append', paths: picked });
           onTablerImport?.(name);
         }}
       />

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { canRedo, canUndo, createEditorState, editorReducer } from './history';
 import type { EditorAction, EditorState } from './types';
-import { line, pt } from './testFixtures';
+import { polyline, pt } from './testFixtures';
 
-const SEGMENTS = [line('a', 'P', pt(0, 0), pt(10, 0)), line('b', 'P', pt(10, 0), pt(20, 0))];
+const PATHS = [polyline('P', [pt(0, 0), pt(10, 0), pt(20, 0)])];
 
 const run = (state: EditorState, ...actions: EditorAction[]): EditorState =>
   actions.reduce(editorReducer, state);
@@ -19,10 +19,10 @@ const drag = (state: EditorState, mergeKey: string, times = 1): EditorState =>
     }))
   );
 
-const x = (state: EditorState) => state.doc.segments[0].p1.x;
+const x = (state: EditorState) => state.doc.paths[0].segments[0].p1.x;
 
 describe('editorReducer history', () => {
-  const selected = () => run(createEditorState(SEGMENTS), { type: 'selection/set', keys: ['a::p1'] });
+  const selected = () => run(createEditorState(PATHS), { type: 'selection/set', keys: ['P1::p1'] });
 
   it('collapses one gesture into a single undo step', () => {
     const state = drag(selected(), 'gesture-1', 5);
@@ -49,16 +49,16 @@ describe('editorReducer history', () => {
     const state = run(
       selected(),
       { type: 'nodes/translate', delta: pt(1, 0), mergeKey: 'g1' },
-      { type: 'selection/set', keys: ['b::p2'] },
+      { type: 'selection/set', keys: ['P2::p2'] },
       { type: 'history/undo' }
     );
-    expect([...state.doc.selection]).toEqual(['a::p1']);
+    expect([...state.doc.selection]).toEqual(['P1::p1']);
   });
 
   it('does not record selection changes on their own', () => {
     const state = run(
       selected(),
-      { type: 'selection/toggle', keys: ['b::p2'] },
+      { type: 'selection/toggle', keys: ['P2::p2'] },
       { type: 'selection/clear' }
     );
     expect(state.past).toHaveLength(0);
@@ -107,7 +107,7 @@ describe('editorReducer history', () => {
   });
 
   it('is a no-op at either end of the stack', () => {
-    const fresh = createEditorState(SEGMENTS);
+    const fresh = createEditorState(PATHS);
     expect(editorReducer(fresh, { type: 'history/undo' })).toBe(fresh);
     expect(editorReducer(fresh, { type: 'history/redo' })).toBe(fresh);
     expect(canUndo(fresh)).toBe(false);
@@ -123,9 +123,9 @@ describe('editorReducer history', () => {
     expect(x(state)).toBe(50);
   });
 
-  it('starts from the segments it is given, with nothing selected', () => {
-    const state = createEditorState(SEGMENTS);
-    expect(state.doc.segments).toBe(SEGMENTS);
+  it('starts from the paths it is given, with nothing selected', () => {
+    const state = createEditorState(PATHS);
+    expect(state.doc.paths).toBe(PATHS);
     expect(state.doc.selection.size).toBe(0);
   });
 });

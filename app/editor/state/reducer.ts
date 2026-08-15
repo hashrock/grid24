@@ -1,15 +1,22 @@
-import type { Point, Segment } from '../types';
+import type { Path, Point, Segment } from '../types';
 import { splitSegment } from '../utils/bezierHelper';
 import {
   EMPTY_SELECTION,
   applyHandleMirror,
+  eachSegment,
   expandToControls,
-  near,
+  findPath,
+  locateSegment,
+  mapPath,
+  mapPathSegments,
+  mapPaths,
+  mapSegments,
   parseNodeKey,
-  pathSegments,
+  pathIds,
   pointKey,
   pruneSelection,
   reflect,
+  removeSegments,
   reversePath,
   sameKeys,
   scaleNodes,
@@ -21,19 +28,27 @@ import type { DocAction, DocState, NodeKey } from './types';
 const inside = (p: Point, min: Point, max: Point) =>
   p.x >= min.x && p.x <= max.x && p.y >= min.y && p.y <= max.y;
 
-/** Anchor keys (`p1`/`p2`) of every segment in a path. */
-const anchorKeysOfPath = (segments: Segment[], pathId: string): Set<NodeKey> => {
+const anchorKeysOfPath = (path: Path): Set<NodeKey> => {
   const keys = new Set<NodeKey>();
-  for (const s of segments) {
-    if (s.pathId !== pathId) continue;
+  for (const s of path.segments) {
     keys.add(pointKey(s.id, 'p1'));
     keys.add(pointKey(s.id, 'p2'));
   }
   return keys;
 };
 
-const withSegments = (state: DocState, segments: Segment[]): DocState =>
-  segments === state.segments ? state : { ...state, segments };
+/** Paths the selection reaches, in document order. */
+const selectedPaths = (state: DocState): Path[] => {
+  const ids = new Set<string>();
+  state.selection.forEach((key) => {
+    const parsed = parseNodeKey(key);
+    if (parsed) ids.add(parsed.segmentId);
+  });
+  return state.paths.filter((p) => p.segments.some((s) => ids.has(s.id)));
+};
+
+const withPaths = (state: DocState, paths: Path[]): DocState =>
+  paths === state.paths ? state : { ...state, paths };
 
 const withSelection = (state: DocState, selection: ReadonlySet<NodeKey>): DocState =>
   sameKeys(selection, state.selection) ? state : { ...state, selection };
@@ -49,30 +64,26 @@ const withSelection = (state: DocState, selection: ReadonlySet<NodeKey>): DocSta
  */
 export function docReducer(state: DocState, action: DocAction): DocState {
   switch (action.type) {
-    case 'segments/replace': {
-      if (state.segments.length === 0 && action.segments.length === 0) {
+    case 'paths/replace': {
+      if (state.paths.length === 0 && action.paths.length === 0) {
         return withSelection(state, EMPTY_SELECTION);
       }
-      return { segments: action.segments, selection: EMPTY_SELECTION };
+      return { paths: action.paths, selection: EMPTY_SELECTION };
     }
 
-    case 'segments/append': {
-      if (action.segments.length === 0) return state;
-      return { ...state, segments: [...state.segments, ...action.segments] };
+    case 'paths/append': {
+      if (action.paths.length === 0) return state;
+      return { ...state, paths: [...state.paths, ...action.paths] };
     }
 
     case 'nodes/translate': {
-      const moved = translateNodes(state.segments, expandToControls(state.selection), action.delta);
-      if (moved === state.segments) return state;
-      const segments = applyHandleMirror(state.segments, moved, state.selection, action.mirror ?? 'none');
-      return { ...state, segments };
+      const moved = translateNodes(state.paths, expandToControls(state.selection), action.delta);
+      if (moved === state.paths) return state;
+      return { ...state, paths: applyHandleMirror(state.paths, moved, state.selection, action.mirror ?? 'none') };
     }
 
     case 'nodes/scale':
-      return withSegments(
-        state,
-        scaleNodes(state.segments, action.from, action.origin, action.sx, action.sy)
-      );
+      return withPaths(state, scaleNodes(state.paths, action.from, action.origin, action.sx, action.sy));
 
     case 'nodes/delete': {
       if (state.selection.size === 0) return state;
@@ -83,142 +94,165 @@ export function docReducer(state: DocState, action: DocAction): DocState {
         if (parsed && (parsed.type === 'p1' || parsed.type === 'p2')) anchorSegIds.add(parsed.segmentId);
       });
 
-      // Deleting an anchor removes its adjoining segments (Illustrator-style);
-      // a path that loses a segment is no longer closed.
+      // Deleting an anchor removes its adjoining segments (Illustrator-style).
+      // A hole in the middle of a chain splits the path in two.
       if (anchorSegIds.size > 0) {
-        const broken = new Set(
-          state.segments.filter((s) => anchorSegIds.has(s.id)).map((s) => s.pathId)
-        );
-        const segments = state.segments
-          .filter((s) => !anchorSegIds.has(s.id))
-          .map((s) => (broken.has(s.pathId) && s.isClosed ? { ...s, isClosed: false } : s));
-        return { segments, selection: EMPTY_SELECTION };
+        // Ids are minted against every path in the document, not just the ones
+        // already visited, so a split can't land on a later path's id.
+        const taken = pathIds(state.paths);
+        const paths: Path[] = [];
+        for (const path of state.paths) {
+          const out = removeSegments(path, anchorSegIds, taken);
+          for (const p of out) taken.add(p.id);
+          paths.push(...out);
+        }
+        return { paths, selection: EMPTY_SELECTION };
       }
 
       // Only control points selected: retract them into their anchors.
-      const segments = state.segments.map((s) => {
+      const paths = mapSegments(state.paths, (s) => {
         let next = s;
         if (state.selection.has(pointKey(s.id, 'c1'))) next = { ...next, c1: { ...next.p1 } };
         if (state.selection.has(pointKey(s.id, 'c2')))
           next = { ...next, c2: { ...next.p2 }, isSmoothP2: false };
         return next;
       });
-      return { segments, selection: EMPTY_SELECTION };
+      return { paths, selection: EMPTY_SELECTION };
     }
 
     case 'anchor/toggleSmooth': {
       const keys = action.anchorKey ? [action.anchorKey] : state.selection;
-      return withSegments(state, toggleAnchorsSmooth(state.segments, keys));
+      return withPaths(state, toggleAnchorsSmooth(state.paths, keys));
     }
 
     case 'path/toggleClosed': {
-      const pathIds = new Set<string>();
-      state.selection.forEach((key) => {
-        const parsed = parseNodeKey(key);
-        const seg = parsed && state.segments.find((s) => s.id === parsed.segmentId);
-        if (seg) pathIds.add(seg.pathId);
-      });
-      if (pathIds.size === 0) return state;
-
-      let segments = state.segments;
-      pathIds.forEach((pathId) => {
-        const segs = pathSegments(segments, pathId);
-        if (segs.length === 0) return;
-        const closed = !segs[0].isClosed;
-        const head = segs[0].p1;
-        const tailId = segs[segs.length - 1].id;
-        segments = segments.map((s) => {
-          if (s.pathId !== pathId) return s;
-          // Closing snaps the tail back onto the head (segments are in chain order).
-          if (closed && s.id === tailId) return { ...s, isClosed: true, p2: { ...head } };
-          return { ...s, isClosed: closed };
-        });
-      });
-      return withSegments(state, segments);
+      const targets = selectedPaths(state);
+      if (targets.length === 0) return state;
+      const ids = new Set(targets.map((p) => p.id));
+      return withPaths(
+        state,
+        mapPaths(state.paths, (path) => {
+          if (!ids.has(path.id) || path.segments.length === 0) return path;
+          const closed = !path.closed;
+          if (!closed) return { ...path, closed };
+          // Closing snaps the tail back onto the head.
+          const head = path.segments[0].p1;
+          const last = path.segments.length - 1;
+          return {
+            ...path,
+            closed,
+            segments: path.segments.map((s, i) => (i === last ? { ...s, p2: { ...head } } : s)),
+          };
+        })
+      );
     }
 
-    case 'path/reverse': {
-      const path = pathSegments(state.segments, action.pathId);
-      if (path.length === 0) return state;
-      return {
-        ...state,
-        segments: [...state.segments.filter((s) => s.pathId !== action.pathId), ...reversePath(path)],
-      };
-    }
+    case 'path/reverse':
+      return withPaths(state, mapPath(state.paths, action.pathId, reversePath));
 
     case 'segment/split': {
-      const index = state.segments.findIndex((s) => s.id === action.segmentId);
-      if (index < 0) return state;
-      const target = state.segments[index];
-      const [left, right] = splitSegment(target, action.t, action.ids);
-      // Keep the original endpoints exact and share the new midpoint, so the
-      // two halves stay joined under the position-based connectivity rules.
+      const found = locateSegment(state.paths, action.segmentId);
+      if (!found) return state;
+      const [left, right] = splitSegment(found.segment, action.t, action.ids);
+      // Keep the original endpoints exact and share the new midpoint.
       const mid: Point = { ...left.p2 };
-      const segments = [...state.segments];
-      segments.splice(index, 1, { ...left, p1: target.p1, p2: mid }, { ...right, p1: mid, p2: target.p2 });
-      return { ...state, segments };
+      const halves: Segment[] = [
+        { ...left, p1: found.segment.p1, p2: mid },
+        { ...right, p1: mid, p2: found.segment.p2 },
+      ];
+      return withPaths(
+        state,
+        mapPath(state.paths, found.path.id, (path) => ({
+          ...path,
+          segments: path.segments.toSpliced(found.index, 1, ...halves),
+        }))
+      );
     }
 
     case 'segment/erase': {
-      const segments = state.segments.filter((s) => s.id !== action.segmentId);
-      if (segments.length === state.segments.length) return state;
-      return { segments, selection: pruneSelection(state.selection, segments) };
+      const found = locateSegment(state.paths, action.segmentId);
+      if (!found) return state;
+      const remove = new Set([action.segmentId]);
+      const taken = pathIds(state.paths);
+      const paths: Path[] = [];
+      for (const path of state.paths) {
+        if (path.id !== found.path.id) {
+          paths.push(path);
+          continue;
+        }
+        const out = removeSegments(path, remove, taken);
+        for (const p of out) taken.add(p.id);
+        paths.push(...out);
+      }
+      return { paths, selection: pruneSelection(state.selection, paths) };
     }
 
     case 'pen/commit': {
       const seg: Segment = {
         id: action.id,
-        pathId: action.pathId,
         p1: action.from,
         c1: action.control,
         c2: action.to,
         p2: action.to,
         isSmoothP2: false,
-        isClosed: action.closing,
       };
-      let segments = [...state.segments, seg];
-      if (action.closing) {
-        segments = segments.map((s) => (s.pathId === action.pathId ? { ...s, isClosed: true } : s));
+      const selection = new Set([pointKey(seg.id, 'p2')]);
+      const existing = findPath(state.paths, action.pathId);
+      if (!existing) {
+        return {
+          paths: [...state.paths, { id: action.pathId, closed: action.closing, segments: [seg] }],
+          selection,
+        };
       }
-      return { segments, selection: new Set([pointKey(seg.id, 'p2')]) };
+      return {
+        paths: mapPath(state.paths, action.pathId, (path) => ({
+          ...path,
+          closed: action.closing || path.closed,
+          segments: [...path.segments, seg],
+        })),
+        selection,
+      };
     }
 
     case 'pen/join': {
+      const target = findPath(state.paths, action.target.pathId);
+      if (!target) return state;
       const bridge: Segment = {
         id: action.id,
-        pathId: action.pathId,
         p1: action.from,
         c1: action.control,
         c2: action.target.point,
         p2: action.target.point,
         isSmoothP2: false,
-        isClosed: false,
       };
-      const other = pathSegments(state.segments, action.target.pathId);
-      const rest = state.segments.filter((s) => s.pathId !== action.target.pathId);
       // The bridge lands on the target's head, so a tail hit needs a flip first.
-      const merged = (action.target.end === 'tail' ? reversePath(other) : other).map((s) => ({
-        ...s,
-        pathId: action.pathId,
-      }));
-      return {
-        segments: [...rest, bridge, ...merged],
-        selection: new Set([pointKey(bridge.id, 'p2')]),
-      };
+      const adopted = action.target.end === 'tail' ? reversePath(target) : target;
+      const paths = state.paths
+        .filter((p) => p.id !== action.target.pathId)
+        .map((p) =>
+          p.id === action.pathId
+            ? { ...p, segments: [...p.segments, bridge, ...adopted.segments] }
+            : p
+        );
+      return { paths, selection: new Set([pointKey(bridge.id, 'p2')]) };
     }
 
     case 'pen/dragHandle': {
-      const seg = state.segments.find((s) => s.id === action.segmentId);
-      if (!seg) return state;
-      const segments = state.segments.map((s) => {
-        if (s.id === seg.id) return { ...s, c2: reflect(action.point, s.p2), isSmoothP2: true };
-        // While closing a path, the start anchor's outgoing handle mirrors too.
-        if (seg.isClosed && s.pathId === seg.pathId && near(s.p1, seg.p2)) {
-          return { ...s, c1: { ...action.point } };
-        }
-        return s;
-      });
-      return { ...state, segments };
+      const found = locateSegment(state.paths, action.segmentId);
+      if (!found) return state;
+      const { path, segment, index } = found;
+      // While closing a path, the start anchor's outgoing handle mirrors too.
+      const wrap = path.closed && index === path.segments.length - 1 ? path.segments[0] : null;
+      return withPaths(
+        state,
+        mapPath(state.paths, path.id, (p) =>
+          mapPathSegments(p, (s) => {
+            if (s.id === segment.id) return { ...s, c2: reflect(action.point, s.p2), isSmoothP2: true };
+            if (wrap && s.id === wrap.id) return { ...s, c1: { ...action.point } };
+            return s;
+          })
+        )
+      );
     }
 
     case 'selection/set':
@@ -234,8 +268,9 @@ export function docReducer(state: DocState, action: DocAction): DocState {
     }
 
     case 'selection/path': {
-      const keys = anchorKeysOfPath(state.segments, action.pathId);
-      if (keys.size === 0) return state;
+      const path = findPath(state.paths, action.pathId);
+      if (!path || path.segments.length === 0) return state;
+      const keys = anchorKeysOfPath(path);
       const fully = [...keys].every((k) => state.selection.has(k));
       if (action.additive) {
         const next = new Set(state.selection);
@@ -248,9 +283,9 @@ export function docReducer(state: DocState, action: DocAction): DocState {
 
     case 'selection/box': {
       const keys = new Set<NodeKey>();
-      for (const s of state.segments) {
-        if (inside(s.p1, action.min, action.max)) keys.add(pointKey(s.id, 'p1'));
-        if (inside(s.p2, action.min, action.max)) keys.add(pointKey(s.id, 'p2'));
+      for (const { segment } of eachSegment(state.paths)) {
+        if (inside(segment.p1, action.min, action.max)) keys.add(pointKey(segment.id, 'p1'));
+        if (inside(segment.p2, action.min, action.max)) keys.add(pointKey(segment.id, 'p2'));
       }
       return withSelection(state, keys);
     }

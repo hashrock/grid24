@@ -7,7 +7,8 @@ import { rootView } from "./root-view";
 import { users, icons } from "./db/schema";
 import { getSession, setSession, clearSession } from "./utils/session";
 import { TABLER_ICONS } from "./lib/tablerIcons";
-import { pathsToSegments } from "./lib/pathImport";
+import { parsePathDataList } from "./lib/pathImport";
+import { serializeContent } from "./lib/svg";
 import type { Env } from "./global.d";
 
 const DEV_USER = {
@@ -30,7 +31,7 @@ async function seedStarterIcons(db: DrizzleD1Database, userId: string) {
     id: crypto.randomUUID(),
     userId,
     name: icon.name,
-    content: JSON.stringify(pathsToSegments(icon.paths)),
+    content: serializeContent(parsePathDataList(icon.paths)),
     isPublic: false,
     tablerSources: JSON.stringify([icon.name]),
     createdAt: now,

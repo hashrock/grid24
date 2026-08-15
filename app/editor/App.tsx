@@ -3,13 +3,13 @@ import type { FC } from 'react';
 import { useEffect, useReducer, useRef, useState } from 'react';
 import Canvas from './components/Canvas';
 import Toolbar from './components/Toolbar';
-import { DEFAULT_RENDER_STYLE, Segment, Tool } from './types';
+import { DEFAULT_RENDER_STYLE, Path, Tool } from './types';
 import type { RenderStyle } from './types';
 import { createEditorState, editorReducer } from './state';
 
 interface EditorProps {
-  initialSegments?: Segment[];
-  onChange?: (segments: Segment[]) => void;
+  initialPaths?: Path[];
+  onChange?: (paths: Path[]) => void;
   /** Fired when a Tabler icon is imported via the search dialog (for credit). */
   onTablerImport?: (name: string) => void;
 }
@@ -28,11 +28,11 @@ const readStoredRenderStyle = (): RenderStyle | null => {
   }
 };
 
-const App: FC<EditorProps> = ({ initialSegments = [], onChange, onTablerImport }) => {
+const App: FC<EditorProps> = ({ initialPaths = [], onChange, onTablerImport }) => {
   // Segments, selection and undo/redo all live in one reducer: every edit is an
   // action, and history is recorded by the reducer rather than by each caller.
-  const [state, dispatch] = useReducer(editorReducer, initialSegments, createEditorState);
-  const { segments, selection } = state.doc;
+  const [state, dispatch] = useReducer(editorReducer, initialPaths, createEditorState);
+  const { paths, selection } = state.doc;
 
   const [tool, setTool] = useState<Tool>(Tool.SELECT);
   // Tabler icons are designed on a 24x24 grid with a 2px stroke.
@@ -59,18 +59,18 @@ const App: FC<EditorProps> = ({ initialSegments = [], onChange, onTablerImport }
   }, [renderStyle]);
 
   // Notify the parent (Edit page) so it can debounce-save to the server.
-  // Selection-only changes don't touch `segments`, so they never trigger a save.
+  // Selection-only changes don't touch `paths`, so they never trigger a save.
   useEffect(() => {
-    onChange?.(segments);
+    onChange?.(paths);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segments]);
+  }, [paths]);
 
   return (
     <div className="flex w-full h-full bg-black overflow-hidden">
       {/* Main Canvas Area */}
       <div className="flex-1 h-full relative">
         <Canvas
-          segments={segments}
+          paths={paths}
           selection={selection}
           dispatch={dispatch}
           tool={tool}
@@ -84,7 +84,7 @@ const App: FC<EditorProps> = ({ initialSegments = [], onChange, onTablerImport }
         <Toolbar
           currentTool={tool}
           setTool={setTool}
-          segments={segments}
+          paths={paths}
           selection={selection}
           dispatch={dispatch}
           onTablerImport={onTablerImport}

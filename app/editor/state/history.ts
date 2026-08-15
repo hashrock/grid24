@@ -1,4 +1,4 @@
-import type { Segment } from '../types';
+import type { Path } from '../types';
 import { EMPTY_SELECTION } from './geometry';
 import { docReducer } from './reducer';
 import type { DocAction, EditorAction, EditorState } from './types';
@@ -14,8 +14,8 @@ const MAX_HISTORY = 100;
  * it is classified here, so no edit can silently escape the history.
  */
 const HISTORIC: Record<DocAction['type'], boolean> = {
-  'segments/replace': true,
-  'segments/append': true,
+  'paths/replace': true,
+  'paths/append': true,
   'nodes/translate': true,
   'nodes/scale': true,
   'nodes/delete': true,
@@ -34,8 +34,8 @@ const HISTORIC: Record<DocAction['type'], boolean> = {
   'selection/clear': false,
 };
 
-export const createEditorState = (segments: Segment[]): EditorState => ({
-  doc: { segments, selection: EMPTY_SELECTION },
+export const createEditorState = (paths: Path[]): EditorState => ({
+  doc: { paths, selection: EMPTY_SELECTION },
   past: [],
   future: [],
   lastMergeKey: null,

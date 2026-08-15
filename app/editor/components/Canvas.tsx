@@ -1,23 +1,27 @@
 /** @jsxImportSource react */
 import type { FC, Dispatch } from 'react';
 import { useRef, useState, useEffect, useMemo } from 'react';
-import { Segment, Point, Tool, GRID_SNAP, SelectionBox, PRIMARY_COLOR, ANCHOR_HIT_PX, PATH_HOVER_PX } from '../types';
+import { Path, Point, Tool, GRID_SNAP, SelectionBox, PRIMARY_COLOR, ANCHOR_HIT_PX, PATH_HOVER_PX } from '../types';
 import type { RenderStyle } from '../types';
 import { findProjectedT, segmentToSvgPath } from '../utils/bezierHelper';
-import { segmentsToPaths } from '../../lib/svg';
+import { pathsToD } from '../../lib/svg';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  expandToControls,
-  groupByPath,
-  pathSegments,
+  findPath,
+  openEndpoints,
+  pathIdOfSegment,
+  placedSegments,
   pointKey,
   reflect,
   reversePath,
+  selectedPathIds as selectedPathIdsOf,
+  selectionBounds as selectionBoundsOf,
+  uniqueSelectedAnchors as uniqueSelectedAnchorsOf,
 } from '../state';
-import type { EditorAction, NodeKey } from '../state';
+import type { Bounds, EditorAction, NodeKey } from '../state';
 
 interface CanvasProps {
-  segments: Segment[];
+  paths: Path[];
   selection: ReadonlySet<NodeKey>;
   dispatch: Dispatch<EditorAction>;
   tool: Tool;
@@ -60,11 +64,11 @@ interface ResizeState {
   handle: ResizeHandleType;
   /** Bounds and node positions frozen at pointerdown, so the scale stays
    *  absolute (dragging back to the start restores the original shape). */
-  initialBounds: { minX: number; maxX: number; minY: number; maxY: number };
+  initialBounds: Bounds;
   initialPoints: Record<NodeKey, Point>;
 }
 
-const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize, renderStyle }) => {
+const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, renderStyle }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoveredSegmentId, setHoveredSegmentId] = useState<string | null>(null);
   const [previewPoint, setPreviewPoint] = useState<Point | null>(null);
@@ -260,104 +264,36 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
     return raw;
   };
 
-  // Segment whose curve passes under `pos` (within the hover tolerance).
-  const findSegmentAt = (pos: Point): Segment | null => {
-    let minDist = PATH_HOVER_PX * upp;
-    let closest: Segment | null = null;
-    segments.forEach(seg => {
-      const { d } = findProjectedT(seg, pos);
-      if (d < minDist) {
-        minDist = d;
-        closest = seg;
-      }
-    });
-    return closest;
-  };
-
-  const getSelectionBounds = (affected: Set<NodeKey>, currentSegments: Segment[]) => {
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      let hasPoints = false;
-
-      currentSegments.forEach(seg => {
-          (['p1', 'c1', 'c2', 'p2'] as const).forEach(type => {
-              if (affected.has(pointKey(seg.id, type))) {
-                  const p = seg[type];
-                  minX = Math.min(minX, p.x);
-                  maxX = Math.max(maxX, p.x);
-                  minY = Math.min(minY, p.y);
-                  maxY = Math.max(maxY, p.y);
-                  hasPoints = true;
-              }
-          });
-      });
-
-      if (!hasPoints) return null;
-      return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
-  };
-
-  // Memoize bounds for rendering
-  const affectedKeys = useMemo(() => expandToControls(selection), [selection]);
-  const selectionBounds = useMemo(() => getSelectionBounds(affectedKeys, segments), [affectedKeys, segments]);
-
-  // Paths considered "active": anchors are only rendered for these
-  const selectedPathIds = useMemo(() => {
-    const ids = new Set<string>();
-    selection.forEach(key => {
-      const segId = key.split('::')[0];
-      const seg = segments.find(s => s.id === segId);
-      if (seg) ids.add(seg.pathId);
-    });
-    return ids;
-  }, [selection, segments]);
-
-  const hoveredPathId = useMemo(
-    () => segments.find(s => s.id === hoveredSegmentId)?.pathId ?? null,
-    [hoveredSegmentId, segments]
+  // --- Derived views ---
+  const placed = useMemo(() => placedSegments(paths), [paths]);
+  const affectedPathIds = useMemo(() => selectedPathIdsOf(paths, selection), [paths, selection]);
+  const selectionBounds = useMemo(() => selectionBoundsOf(paths, selection), [paths, selection]);
+  const uniqueSelectedAnchors = useMemo(
+    () => uniqueSelectedAnchorsOf(paths, selection),
+    [paths, selection]
   );
-
+  const hoveredPathId = useMemo(
+    () => pathIdOfSegment(paths, hoveredSegmentId),
+    [paths, hoveredSegmentId]
+  );
+  const endpoints = useMemo(() => openEndpoints(paths), [paths]);
   // Whole paths (not single segments) — caps and joins only read correctly
   // when a path is drawn as one `d`.
-  const previewPaths = useMemo(() => segmentsToPaths(segments), [segments]);
+  const previewPaths = useMemo(() => pathsToD(paths), [paths]);
 
-  // Free endpoints of open paths (segments are kept in chain order per path).
-  // Pen mode uses these to continue an existing path or join two paths.
-  const openEndpoints = useMemo(() => {
-    const eps: { pathId: string; end: 'head' | 'tail'; point: Point }[] = [];
-    groupByPath(segments).forEach((segs, pathId) => {
-      if (segs[0].isClosed) return;
-      eps.push({ pathId, end: 'head', point: segs[0].p1 });
-      eps.push({ pathId, end: 'tail', point: segs[segs.length - 1].p2 });
-    });
-    return eps;
-  }, [segments]);
-
-  // Calculate number of unique anchors involved in selection
-  const uniqueSelectedAnchors = useMemo(() => {
-      const anchorPositions: Point[] = [];
-      selection.forEach(key => {
-          const parts = key.split('::');
-          if (parts.length === 2) {
-              const segId = parts[0];
-              const type = parts[1];
-              const seg = segments.find(s => s.id === segId);
-              if (seg) {
-                  // Map any selected node to its Anchor position
-                  if (type === 'p1' || type === 'c1') anchorPositions.push(seg.p1);
-                  if (type === 'p2' || type === 'c2') anchorPositions.push(seg.p2);
-              }
-          }
-      });
-
-      // Filter unique based on distance (epsilon for float comparison)
-      const unique: Point[] = [];
-      anchorPositions.forEach(p => {
-          if (!unique.some(u => Math.hypot(u.x - p.x, u.y - p.y) < 0.001)) {
-              unique.push(p);
-          }
-      });
-
-      return unique.length;
-  }, [selection, segments]);
+  // Segment whose curve passes under `pos` (within the hover tolerance).
+  const findSegmentAt = (pos: Point) => {
+    let minDist = PATH_HOVER_PX * upp;
+    let closest: (typeof placed)[number] | null = null;
+    for (const item of placed) {
+      const { d } = findProjectedT(item.segment, pos);
+      if (d < minDist) {
+        minDist = d;
+        closest = item;
+      }
+    }
+    return closest;
+  };
 
   const showTransform = tool === Tool.SELECT &&
                         uniqueSelectedAnchors > 1 &&
@@ -393,14 +329,18 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
         if (hitHandle) {
             startGesture();
             const initialPoints: Record<NodeKey, Point> = {};
-            segments.forEach(seg => {
+            for (const { segment } of placed) {
                 (['p1', 'c1', 'c2', 'p2'] as const).forEach(t => {
-                    const key = pointKey(seg.id, t);
-                    if (affectedKeys.has(key)) {
-                        initialPoints[key] = { ...seg[t] };
+                    // Anchors carry their attached control along, same as a drag.
+                    const key = pointKey(segment.id, t);
+                    const anchorKey = t === 'c1' ? pointKey(segment.id, 'p1')
+                                    : t === 'c2' ? pointKey(segment.id, 'p2')
+                                    : key;
+                    if (selection.has(key) || selection.has(anchorKey)) {
+                        initialPoints[key] = { ...segment[t] };
                     }
                 });
-            });
+            }
 
             setResizeState({
                 handle: hitHandle.type,
@@ -416,7 +356,7 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
       let hitFound = false;
       const hitNodes = new Set<NodeKey>();
 
-      for (const seg of segments) {
+      for (const { segment: seg, path } of placed) {
         const points: Array<{ type: 'p1'|'c1'|'c2'|'p2', val: Point }> = [
           { type: 'p1', val: seg.p1 },
           { type: 'c1', val: seg.c1 },
@@ -432,7 +372,7 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
           // when they sit on their anchor (straight segment), where the anchor wins.
           const anchorOfHandle = p.type === 'c1' ? seg.p1 : seg.p2;
           const isVisibleHandle = !isAnchor &&
-                                  selectedPathIds.has(seg.pathId) &&
+                                  affectedPathIds.has(path.id) &&
                                   Math.hypot(p.val.x - anchorOfHandle.x, p.val.y - anchorOfHandle.y) > 0.001;
 
           if (isAnchor || isParentSelected || isVisibleHandle) {
@@ -440,12 +380,11 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
                hitNodes.add(pointKey(seg.id, p.type));
                hitFound = true;
                if (isAnchor) {
-                   segments.forEach(s => {
-                       if (s.id !== seg.id) {
-                           if (Math.hypot(s.p1.x - p.val.x, s.p1.y - p.val.y) < 0.01) hitNodes.add(pointKey(s.id, 'p1'));
-                           if (Math.hypot(s.p2.x - p.val.x, s.p2.y - p.val.y) < 0.01) hitNodes.add(pointKey(s.id, 'p2'));
-                       }
-                   });
+                   for (const { segment: s } of placed) {
+                       if (s.id === seg.id) continue;
+                       if (Math.hypot(s.p1.x - p.val.x, s.p1.y - p.val.y) < 0.01) hitNodes.add(pointKey(s.id, 'p1'));
+                       if (Math.hypot(s.p2.x - p.val.x, s.p2.y - p.val.y) < 0.01) hitNodes.add(pointKey(s.id, 'p2'));
+                   }
                }
             }
           }
@@ -476,11 +415,11 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
       } else {
         // Clicking the stroke itself selects the whole path (Illustrator-style),
         // so it can then be dragged as one.
-        const seg = findSegmentAt(pos);
-        if (seg) {
+        const hit = findSegmentAt(pos);
+        if (hit) {
             startGesture();
             setIsDragging(true);
-            dispatch({ type: 'selection/path', pathId: seg.pathId, additive: e.shiftKey });
+            dispatch({ type: 'selection/path', pathId: hit.path.id, additive: e.shiftKey });
             return;
         }
 
@@ -493,21 +432,22 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
     } else if (tool === Tool.PEN) {
         if (!penState) {
             // Clicking a free endpoint of an open path continues that path
-            const ep = openEndpoints.find(p => Math.hypot(p.point.x - pos.x, p.point.y - pos.y) < anchorHitR);
+            const ep = endpoints.find(p => Math.hypot(p.point.x - pos.x, p.point.y - pos.y) < anchorHitR);
             if (ep) {
                 const gesture = startGesture();
-                let pathSegs = pathSegments(segments, ep.pathId);
+                let path = findPath(paths, ep.pathId);
+                if (!path) return;
                 if (ep.end === 'head') {
                     // Continue from the head by reversing the path first.
                     // reversePath keeps ids, so the local copy stays in sync.
-                    pathSegs = reversePath(pathSegs);
+                    path = reversePath(path);
                     dispatch({ type: 'path/reverse', pathId: ep.pathId, mergeKey: gesture });
                 }
-                const tail = pathSegs[pathSegs.length - 1];
+                const tail = path.segments[path.segments.length - 1];
                 setPenState({
                     isActive: true,
                     pathId: ep.pathId,
-                    startPoint: pathSegs[0].p1,
+                    startPoint: path.segments[0].p1,
                     currentPoint: ep.point,
                     outgoingControl: ep.point,
                     isDraggingStart: false
@@ -540,7 +480,7 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
                 isClosing = true;
             } else {
                 // Clicking a free endpoint of ANOTHER open path joins the two paths
-                const ep = openEndpoints.find(p =>
+                const ep = endpoints.find(p =>
                     p.pathId !== penState.pathId &&
                     Math.hypot(p.point.x - pos.x, p.point.y - pos.y) < anchorHitR);
                 if (ep) {
@@ -587,12 +527,12 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
         }
     } else if (tool === Tool.SPLIT) {
        if (hoveredSegmentId) {
-        const segment = segments.find(s => s.id === hoveredSegmentId);
-        if (segment) {
-          const { t } = findProjectedT(segment, pos);
+        const hit = placed.find(item => item.segment.id === hoveredSegmentId);
+        if (hit) {
+          const { t } = findProjectedT(hit.segment, pos);
           dispatch({
             type: 'segment/split',
-            segmentId: segment.id,
+            segmentId: hit.segment.id,
             t,
             ids: [uuidv4(), uuidv4()],
             mergeKey: startGesture(),
@@ -692,13 +632,13 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
         }
     } else {
       if (tool === Tool.SPLIT || tool === Tool.ERASER || tool === Tool.SELECT) {
-        setHoveredSegmentId(findSegmentAt(pos)?.id ?? null);
+        setHoveredSegmentId(findSegmentAt(pos)?.segment.id ?? null);
       } else {
         setHoveredSegmentId(null);
       }
       if (tool === Tool.PEN) {
         // Highlight continue / join targets (free endpoints of other open paths)
-        const ep = openEndpoints.find(p =>
+        const ep = endpoints.find(p =>
             p.pathId !== penState?.pathId &&
             Math.hypot(p.point.x - pos.x, p.point.y - pos.y) < anchorHitR);
         setHoverEndpoint(ep ? ep.point : null);
@@ -720,8 +660,7 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
 
     if (tool === Tool.PEN && penState && !penState.isDraggingStart) {
         const dist = Math.hypot(penState.currentPoint.x - penState.startPoint.x, penState.currentPoint.y - penState.startPoint.y);
-        const hasSegments = segments.length > 0;
-        if (dist < 0.01 && hasSegments) {
+        if (dist < 0.01 && placed.length > 0) {
             setPenState(null);
         }
     }
@@ -770,10 +709,10 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
           </g>
 
           {/* Paths */}
-          {segments.map(seg => (
+          {placed.map(({ segment }) => (
             <path
-              key={seg.id}
-              d={segmentToSvgPath(seg)}
+              key={segment.id}
+              d={segmentToSvgPath(segment)}
               fill="none"
               stroke="white"
               strokeWidth={0.2}
@@ -783,16 +722,16 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
           ))}
 
           {/* Active path highlight: thin primary-color overlay at constant screen width */}
-          {segments.map(seg => {
+          {placed.map(({ segment, path }) => {
             const segmentLevel = tool === Tool.ERASER || tool === Tool.SPLIT;
             const active = segmentLevel
-              ? seg.id === hoveredSegmentId
-              : seg.pathId === hoveredPathId || selectedPathIds.has(seg.pathId);
+              ? segment.id === hoveredSegmentId
+              : path.id === hoveredPathId || affectedPathIds.has(path.id);
             if (!active) return null;
             return (
               <path
-                key={`hl-${seg.id}`}
-                d={segmentToSvgPath(seg)}
+                key={`hl-${segment.id}`}
+                d={segmentToSvgPath(segment)}
                 fill="none"
                 stroke={tool === Tool.ERASER ? '#ef4444' : PRIMARY_COLOR}
                 strokeWidth={1.5 * upp}
@@ -814,23 +753,23 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
           )}
 
           {/* Handles */}
-          {segments.map(seg => {
+          {placed.map(({ segment: seg, path }) => {
              const isP1Selected = selection.has(pointKey(seg.id, 'p1'));
              const isP2Selected = selection.has(pointKey(seg.id, 'p2'));
              const isC1Selected = selection.has(pointKey(seg.id, 'c1'));
              const isC2Selected = selection.has(pointKey(seg.id, 'c2'));
 
              // Anchors only appear on selected / hovered paths and the path being drawn
-             const pathActive = selectedPathIds.has(seg.pathId) ||
-                                seg.pathId === hoveredPathId ||
-                                penState?.pathId === seg.pathId;
+             const pathActive = affectedPathIds.has(path.id) ||
+                                path.id === hoveredPathId ||
+                                penState?.pathId === path.id;
              const showHandles = (tool === Tool.SELECT || tool === Tool.PEN) && pathActive;
 
              if (!showHandles) return null;
 
              // A selected path shows every anchor's handles at once (like
              // Illustrator); hovering alone only reveals the anchors.
-             const pathSelected = selectedPathIds.has(seg.pathId);
+             const pathSelected = affectedPathIds.has(path.id);
              const showC1 = pathSelected || isP1Selected || isC1Selected;
              const showC2 = pathSelected || isP2Selected || isC2Selected;
 
@@ -860,7 +799,7 @@ const Canvas: FC<CanvasProps> = ({ segments, selection, dispatch, tool, gridSize
               anchor = penState.startPoint;
               out = penState.outgoingControl;
             } else if (hoveredSegmentId) {
-              const seg = segments.find(s => s.id === hoveredSegmentId);
+              const seg = placed.find(item => item.segment.id === hoveredSegmentId)?.segment;
               if (seg) {
                 anchor = seg.p2;
                 out = reflect(seg.c2, seg.p2);

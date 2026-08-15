@@ -3,15 +3,45 @@ export interface Point {
   y: number;
 }
 
+/**
+ * One cubic bezier. A segment knows nothing about the path it belongs to —
+ * that relationship is the containing `Path`, not a field here.
+ */
 export interface Segment {
   id: string;
-  pathId: string; // Groups segments into a continuous path
   p1: Point; // Start
   c1: Point; // Control 1
   c2: Point; // Control 2
   p2: Point; // End
-  isSmoothP2?: boolean; // Is the connection at p2 smooth?
-  isClosed?: boolean; // Is the path closed?
+  /** Is the junction at p2 smooth? The flag belongs to the *arriving* segment. */
+  isSmoothP2?: boolean;
+}
+
+/**
+ * A continuous chain of segments: `segments[i].p2` meets `segments[i+1].p1`,
+ * and a closed path additionally joins the last p2 back to the first p1.
+ *
+ * Chain order is the array order. Keeping segments nested (rather than flat
+ * with a `pathId`) is what makes that invariant structural instead of a
+ * convention every call site has to remember.
+ */
+export interface Path {
+  id: string;
+  closed: boolean;
+  segments: Segment[];
+}
+
+/**
+ * The flat wire format: what is persisted in D1 and what the public SVG
+ * endpoints read. Predates the nested `Path` model, so it carries the grouping
+ * as a `pathId` and repeats `isClosed` on every segment of a path.
+ *
+ * Only `app/lib/svg.ts` should ever touch this — everything else works with
+ * `Path[]`.
+ */
+export interface StoredSegment extends Segment {
+  pathId: string;
+  isClosed?: boolean;
 }
 
 export interface SelectionBox {

@@ -65,7 +65,7 @@ export default function IconsIndex({
                   className="flex w-full flex-col items-center gap-3 text-white"
                 >
                   <div className="transition-transform group-hover:scale-110">
-                    <IconSvg segments={parseContent(icon.content)} size={48} />
+                    <IconSvg paths={parseContent(icon.content)} size={48} />
                   </div>
                   <div className="w-full text-center">
                     <div className="truncate text-sm font-medium">{icon.name}</div>

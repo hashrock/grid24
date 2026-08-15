@@ -1,8 +1,8 @@
 import { Head, Link } from "@inertiajs/react";
 import { useCallback, useRef, useState } from "react";
 import Editor from "../../editor/App";
-import type { Segment } from "../../editor/types";
-import { parseContent } from "../../lib/svg";
+import type { Path } from "../../editor/types";
+import { parseContent, serializeContent } from "../../lib/svg";
 import type { SessionUser } from "../../user";
 
 type IconData = {
@@ -38,8 +38,8 @@ export default function IconsEdit({
   const [isPublic, setIsPublic] = useState(icon.isPublic);
   const [status, setStatus] = useState<SaveStatus>("saved");
 
-  const initialSegments = parseContent(icon.content);
-  const segmentsRef = useRef<Segment[]>(initialSegments);
+  const initialPaths = parseContent(icon.content);
+  const pathsRef = useRef<Path[]>(initialPaths);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Tabler icons this drawing was built from — persisted for public attribution.
   const sourcesRef = useRef<Set<string>>(new Set(parseSources(icon.tablerSources)));
@@ -71,18 +71,18 @@ export default function IconsEdit({
     setStatus("dirty");
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      persist({ content: JSON.stringify(segmentsRef.current) });
+      persist({ content: serializeContent(pathsRef.current) });
     }, 800);
   }, [persist]);
 
-  const onSegmentsChange = useCallback(
-    (segments: Segment[]) => {
+  const onPathsChange = useCallback(
+    (paths: Path[]) => {
       // Skip the initial mount echo (identical reference to what we loaded).
-      if (segments === initialSegments) return;
-      segmentsRef.current = segments;
+      if (paths === initialPaths) return;
+      pathsRef.current = paths;
       scheduleSave();
     },
-    [initialSegments, scheduleSave]
+    [initialPaths, scheduleSave]
   );
 
   const onTablerImport = useCallback(
@@ -152,8 +152,8 @@ export default function IconsEdit({
 
       <div className="flex-1 overflow-hidden">
         <Editor
-          initialSegments={initialSegments}
-          onChange={onSegmentsChange}
+          initialPaths={initialPaths}
+          onChange={onPathsChange}
           onTablerImport={onTablerImport}
         />
       </div>

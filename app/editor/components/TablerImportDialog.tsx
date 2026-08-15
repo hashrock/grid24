@@ -1,8 +1,8 @@
 /** @jsxImportSource react */
 import type { FC } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Segment } from "../types";
-import { pathsToSegments } from "../../lib/pathImport";
+import type { Path } from "../types";
+import { parsePathDataList } from "../../lib/pathImport";
 import {
   loadTablerIcons,
   searchTablerIcons,
@@ -12,8 +12,8 @@ import {
 interface TablerImportDialogProps {
   open: boolean;
   onClose: () => void;
-  /** Called with the chosen icon's segments (fresh ids/pathIds). */
-  onPick: (segments: Segment[], name: string) => void;
+  /** Called with the chosen icon's paths (freshly generated ids). */
+  onPick: (paths: Path[], name: string) => void;
 }
 
 /** Small inline preview of a Tabler icon from its raw path `d` strings. */
@@ -71,7 +71,7 @@ const TablerImportDialog: FC<TablerImportDialogProps> = ({ open, onClose, onPick
   if (!open) return null;
 
   const pick = (icon: TablerIconEntry) => {
-    onPick(pathsToSegments(icon.p), icon.n);
+    onPick(parsePathDataList(icon.p), icon.n);
     onClose();
   };
 

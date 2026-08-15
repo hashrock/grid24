@@ -2,7 +2,7 @@ import { Head, Link } from "@inertiajs/react";
 import { useState } from "react";
 import { Nav } from "../../components/Nav";
 import { IconSvg } from "../../lib/IconSvg";
-import { parseContent, segmentsToSvgString } from "../../lib/svg";
+import { parseContent, pathsToSvgString } from "../../lib/svg";
 import type { SessionUser } from "../../user";
 
 type ShowIcon = {
@@ -36,8 +36,8 @@ export default function IconsShow({
   icon: ShowIcon;
   isOwner: boolean;
 }) {
-  const segments = parseContent(icon.content);
-  const svgString = segmentsToSvgString(segments);
+  const paths = parseContent(icon.content);
+  const svgString = pathsToSvgString(paths);
   const sources = parseSources(icon.tablerSources);
   const [copied, setCopied] = useState(false);
 
@@ -68,7 +68,7 @@ export default function IconsShow({
       <main className="mx-auto max-w-2xl px-6 py-10">
         <div className="anim-item flex flex-col items-center gap-6 rounded-2xl border border-neutral-800 bg-neutral-900/40 p-10">
           <div className="rounded-xl bg-neutral-950 p-10 text-white">
-            <IconSvg segments={segments} size={160} strokeWidth={2} />
+            <IconSvg paths={paths} size={160} strokeWidth={2} />
           </div>
 
           <div className="text-center">

@@ -1,27 +1,18 @@
-import type { Point, Segment } from "../editor/types";
+import type { Path, Point, Segment } from "../editor/types";
 
 /**
- * Robust SVG path -> Segment[] importer.
+ * Robust SVG path -> Path[] importer.
  *
  * Supports absolute & relative M/L/H/V/C/S/Q/T/A/Z. Lines are stored as
  * cubics with coincident control points (matching the editor's convention);
  * arcs are converted to cubic bezier chunks. Each subpath (every M) becomes a
- * new pathId so `segmentsToPaths` groups them correctly.
+ * separate Path.
  */
 
 const uid = () => crypto.randomUUID();
 
-type Seg = Segment;
-
-function seg(
-  pathId: string,
-  p1: Point,
-  c1: Point,
-  c2: Point,
-  p2: Point,
-  isClosed = false
-): Seg {
-  return { id: uid(), pathId, p1, c1, c2, p2, isClosed };
+function seg(p1: Point, c1: Point, c2: Point, p2: Point): Segment {
+  return { id: uid(), p1, c1, c2, p2 };
 }
 
 // --- Arc (A/a) -> cubic beziers -------------------------------------------
@@ -130,8 +121,8 @@ const PARAMS: Record<string, number> = {
   M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0,
 };
 
-export function pathToSegments(d: string): Seg[] {
-  const segments: Seg[] = [];
+export function parsePathData(d: string): Path[] {
+  const paths: Path[] = [];
   const nums: (string | number)[] = [];
   let m: RegExpExecArray | null;
   TOKEN_RE.lastIndex = 0;
@@ -142,10 +133,17 @@ export function pathToSegments(d: string): Seg[] {
   let i = 0;
   let cur: Point = { x: 0, y: 0 };
   let start: Point = { x: 0, y: 0 };
-  let pathId = uid();
-  let subpathStartIdx = 0;
   let prevCubicCtrl: Point | null = null; // for S/s reflection
   let cmd = "";
+
+  // The subpath currently being built; flushed on M and at the end.
+  let segments: Segment[] = [];
+  let closed = false;
+  const flush = () => {
+    if (segments.length > 0) paths.push({ id: uid(), closed, segments });
+    segments = [];
+    closed = false;
+  };
 
   const num = () => nums[i++] as number;
 
@@ -169,23 +167,18 @@ export function pathToSegments(d: string): Seg[] {
         x += cur.x;
         y += cur.y;
       }
+      flush();
       cur = { x, y };
       start = { x, y };
-      pathId = uid();
-      subpathStartIdx = segments.length;
       prevCubicCtrl = null;
       continue;
     }
     if (upper === "Z") {
-      // Close: mark subpath segments closed, snap/line back to start.
-      for (let k = subpathStartIdx; k < segments.length; k++) {
-        segments[k].isClosed = true;
-      }
+      // Close: the chain has to actually reach back to the start point.
       if (Math.hypot(cur.x - start.x, cur.y - start.y) > 0.001) {
-        segments.push(
-          seg(pathId, { ...cur }, { ...cur }, { ...start }, { ...start }, true)
-        );
+        segments.push(seg({ ...cur }, { ...cur }, { ...start }, { ...start }));
       }
+      closed = true;
       cur = { ...start };
       prevCubicCtrl = null;
       continue;
@@ -248,7 +241,7 @@ export function pathToSegments(d: string): Seg[] {
       if (rel) { ex += cur.x; ey += cur.y; }
       const cubics = arcToCubics(cur, rx, ry, rot, large, sweep, { x: ex, y: ey });
       for (const cc of cubics) {
-        segments.push(seg(pathId, { ...cur }, cc.c1, cc.c2, cc.end));
+        segments.push(seg({ ...cur }, cc.c1, cc.c2, cc.end));
         cur = cc.end;
       }
       prevCubicCtrl = null;
@@ -258,17 +251,16 @@ export function pathToSegments(d: string): Seg[] {
       break;
     }
 
-    segments.push(seg(pathId, p1, c1, c2, end));
+    segments.push(seg(p1, c1, c2, end));
     cur = end;
     prevCubicCtrl = isCurve ? c2 : null;
   }
 
-  return segments;
+  flush();
+  return paths;
 }
 
-/** Parse several <path> `d` strings into one combined Segment[]. */
-export function pathsToSegments(ds: string[]): Seg[] {
-  const out: Seg[] = [];
-  for (const d of ds) out.push(...pathToSegments(d));
-  return out;
+/** Parse several <path> `d` strings into one combined Path[]. */
+export function parsePathDataList(ds: string[]): Path[] {
+  return ds.flatMap(parsePathData);
 }

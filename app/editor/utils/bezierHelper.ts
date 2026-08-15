@@ -18,7 +18,11 @@ export const toBezier = (s: Segment) => {
   return new Bezier(s.p1.x, s.p1.y, s.c1.x, s.c1.y, s.c2.x, s.c2.y, s.p2.x, s.p2.y);
 };
 
-export const splitSegment = (segment: Segment, t: number): [Segment, Segment] => {
+/**
+ * Cut `segment` at curve parameter `t`. Pass `ids` to name the two halves —
+ * the reducer does, so splitting stays a pure function of its inputs.
+ */
+export const splitSegment = (segment: Segment, t: number, ids?: [string, string]): [Segment, Segment] => {
   const b = toBezier(segment);
   const split = b.split(t);
 
@@ -47,6 +51,11 @@ export const splitSegment = (segment: Segment, t: number): [Segment, Segment] =>
   );
   // Second segment inherits original smoothness
   seg2.isSmoothP2 = segment.isSmoothP2;
+
+  if (ids) {
+    seg1.id = ids[0];
+    seg2.id = ids[1];
+  }
 
   return [seg1, seg2];
 };

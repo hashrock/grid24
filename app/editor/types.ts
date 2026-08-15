@@ -69,11 +69,17 @@ export const DEFAULT_RENDER_STYLE: RenderStyle = {
 };
 
 export enum Tool {
+  /** Direct selection (hollow arrow): individual anchors and handles. Default. */
+  DIRECT = 'DIRECT',
+  /** Object selection (solid arrow): whole paths, moved and scaled as one. */
   SELECT = 'SELECT',
   PEN = 'PEN',
   SPLIT = 'SPLIT',
   ERASER = 'ERASER'
 }
+
+/** Tools that edit an existing selection rather than creating geometry. */
+export const isSelectionTool = (t: Tool) => t === Tool.DIRECT || t === Tool.SELECT;
 
 // Primary (accent) color for all overlay UI: selected paths, anchors,
 // handles, marquee, transform controls. Matches the Figma/Illustrator

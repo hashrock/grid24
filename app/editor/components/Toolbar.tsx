@@ -97,7 +97,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
     </div>
   );
 
-  const ToolButton = ({ tool, label, icon }: { tool: Tool, label: string, icon: ReactNode }) => (
+  const ToolButton = ({ tool, label, hint, icon }: { tool: Tool, label: string, hint: string, icon: ReactNode }) => (
     <button
       onClick={() => setTool(tool)}
       className={`p-3 rounded-lg flex flex-col items-center gap-1 transition-all border ${
@@ -105,7 +105,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
           ? 'bg-neutral-900 border-white text-white'
           : 'bg-black border-transparent text-neutral-500 hover:text-white hover:border-neutral-800'
       }`}
-      title={label}
+      title={hint}
     >
       {icon}
       <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
@@ -120,24 +120,36 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
       </div>
 
       <div className="grid grid-cols-2 gap-3">
+        {/* Direct vs object selection follow the vector-editor convention:
+            a hollow arrow edits anchors, a solid one moves whole shapes. */}
+        <ToolButton
+          tool={Tool.DIRECT}
+          label="Node"
+          hint="頂点選択 — アンカーとハンドルを編集"
+          icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3l6.5 15.5 2.3-6.7 6.7-2.3L6 3z"/><rect x="2" y="17" width="4" height="4"/></svg>}
+        />
         <ToolButton
           tool={Tool.SELECT}
           label="Select"
-          icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>}
+          hint="図形選択 — パス全体を移動・変形"
+          icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>}
         />
         <ToolButton
           tool={Tool.PEN}
           label="Pen"
+          hint="ペン — パスを描く"
           icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>}
         />
         <ToolButton
           tool={Tool.SPLIT}
           label="Split"
+          hint="分割 — セグメントの途中にアンカーを追加"
           icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>}
         />
         <ToolButton
             tool={Tool.ERASER}
             label="Erase"
+            hint="消去 — セグメントを削除"
             icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>}
         />
       </div>

@@ -34,7 +34,9 @@ const App: FC<EditorProps> = ({ initialPaths = [], onChange, onTablerImport }) =
   const [state, dispatch] = useReducer(editorReducer, initialPaths, createEditorState);
   const { paths, selection } = state.doc;
 
-  const [tool, setTool] = useState<Tool>(Tool.SELECT);
+  // Node editing is the default: this is a 24x24 icon editor, so most work is
+  // nudging anchors rather than moving whole shapes around.
+  const [tool, setTool] = useState<Tool>(Tool.DIRECT);
   // Tabler icons are designed on a 24x24 grid with a 2px stroke.
   const gridSize = 24;
 

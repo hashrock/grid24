@@ -30,6 +30,7 @@ const HISTORIC: Record<DocAction['type'], boolean> = {
   'selection/set': false,
   'selection/toggle': false,
   'selection/path': false,
+  'selection/segment': false,
   'selection/box': false,
   'selection/clear': false,
 };

@@ -54,6 +54,25 @@ const withSelection = (state: DocState, selection: ReadonlySet<NodeKey>): DocSta
   sameKeys(selection, state.selection) ? state : { ...state, selection };
 
 /**
+ * Selecting a group of anchors at once (a whole path, or one segment's pair).
+ * Shift toggles the group; a plain click on something already fully selected
+ * keeps the wider selection so it stays draggable as one.
+ */
+const applyGroupSelection = (
+  state: DocState,
+  keys: Set<NodeKey>,
+  additive: boolean
+): DocState => {
+  const fully = [...keys].every((k) => state.selection.has(k));
+  if (additive) {
+    const next = new Set(state.selection);
+    keys.forEach((k) => (fully ? next.delete(k) : next.add(k)));
+    return withSelection(state, next);
+  }
+  return fully ? state : withSelection(state, keys);
+};
+
+/**
  * The single place the document changes. Pure and id-free — every new segment
  * id is supplied by the caller — so it can be exercised in tests without React
  * or a uuid stub.
@@ -270,22 +289,34 @@ export function docReducer(state: DocState, action: DocAction): DocState {
     case 'selection/path': {
       const path = findPath(state.paths, action.pathId);
       if (!path || path.segments.length === 0) return state;
-      const keys = anchorKeysOfPath(path);
-      const fully = [...keys].every((k) => state.selection.has(k));
-      if (action.additive) {
-        const next = new Set(state.selection);
-        keys.forEach((k) => (fully ? next.delete(k) : next.add(k)));
-        return withSelection(state, next);
-      }
-      // Clicking an already-selected path keeps the wider selection draggable.
-      return fully ? state : withSelection(state, keys);
+      return applyGroupSelection(state, anchorKeysOfPath(path), action.additive);
+    }
+
+    case 'selection/segment': {
+      const found = locateSegment(state.paths, action.segmentId);
+      if (!found) return state;
+      const keys = new Set([
+        pointKey(found.segment.id, 'p1'),
+        pointKey(found.segment.id, 'p2'),
+      ]);
+      return applyGroupSelection(state, keys, action.additive);
     }
 
     case 'selection/box': {
       const keys = new Set<NodeKey>();
-      for (const { segment } of eachSegment(state.paths)) {
-        if (inside(segment.p1, action.min, action.max)) keys.add(pointKey(segment.id, 'p1'));
-        if (inside(segment.p2, action.min, action.max)) keys.add(pointKey(segment.id, 'p2'));
+      if (action.mode === 'paths') {
+        // Object mode: a path is caught whole as soon as one anchor is inside.
+        for (const path of state.paths) {
+          const touched = path.segments.some(
+            (s) => inside(s.p1, action.min, action.max) || inside(s.p2, action.min, action.max)
+          );
+          if (touched) anchorKeysOfPath(path).forEach((k) => keys.add(k));
+        }
+      } else {
+        for (const { segment } of eachSegment(state.paths)) {
+          if (inside(segment.p1, action.min, action.max)) keys.add(pointKey(segment.id, 'p1'));
+          if (inside(segment.p2, action.min, action.max)) keys.add(pointKey(segment.id, 'p2'));
+        }
       }
       return withSelection(state, keys);
     }

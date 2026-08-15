@@ -542,9 +542,51 @@ describe('docReducer', () => {
       expect(docReducer(before, { type: 'selection/path', pathId: 'nope', additive: false })).toBe(before);
     });
 
+    it('segment takes just that segment’s two anchors', () => {
+      const next = docReducer(document(), { type: 'selection/segment', segmentId: 'P2', additive: false });
+      expect([...next.selection].sort()).toEqual(['P2::p1', 'P2::p2']);
+    });
+
+    it('segment keeps a wider selection when it is already fully selected', () => {
+      const before = doc(document().paths, ['P2::p1', 'P2::p2', 'Q1::p1']);
+      expect(docReducer(before, { type: 'selection/segment', segmentId: 'P2', additive: false })).toBe(before);
+    });
+
+    it('segment with Shift adds then removes the pair', () => {
+      const before = doc(document().paths, ['Q1::p1']);
+      const added = docReducer(before, { type: 'selection/segment', segmentId: 'P1', additive: true });
+      expect([...added.selection].sort()).toEqual(['P1::p1', 'P1::p2', 'Q1::p1']);
+      const removed = docReducer(added, { type: 'selection/segment', segmentId: 'P1', additive: true });
+      expect([...removed.selection]).toEqual(['Q1::p1']);
+    });
+
+    it('segment is a no-op for an unknown segment', () => {
+      const before = document();
+      expect(docReducer(before, { type: 'selection/segment', segmentId: 'nope', additive: false })).toBe(before);
+    });
+
     it('box selects anchors inside the marquee, bounds inclusive', () => {
       const next = docReducer(document(), { type: 'selection/box', min: pt(0, 0), max: pt(10, 0) });
       expect([...next.selection].sort()).toEqual(['P1::p1', 'P1::p2', 'P2::p1']);
+    });
+
+    it('box in paths mode takes a whole path when any anchor is inside', () => {
+      // The box only reaches P's first anchor, but object mode takes all of P
+      // — and must not drag Q in, whose anchors are all outside.
+      const next = docReducer(document(), {
+        type: 'selection/box',
+        min: pt(-1, -1),
+        max: pt(1, 1),
+        mode: 'paths',
+      });
+      expect([...next.selection].sort()).toEqual(['P1::p1', 'P1::p2', 'P2::p1', 'P2::p2']);
+    });
+
+    it('box in paths mode selects nothing when the marquee is empty', () => {
+      const before = document();
+      expect(
+        docReducer(before, { type: 'selection/box', min: pt(50, 50), max: pt(60, 60), mode: 'paths' })
+      ).toBe(before);
     });
 
     it('clear is a no-op when nothing is selected', () => {

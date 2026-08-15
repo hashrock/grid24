@@ -61,10 +61,15 @@ export type DocAction =
   | { type: 'pen/dragHandle'; segmentId: string; point: Point }
   | { type: 'selection/set'; keys: Iterable<NodeKey> }
   | { type: 'selection/toggle'; keys: Iterable<NodeKey> }
-  /** Select every anchor of a path (clicking its stroke). */
+  /** Select every anchor of a path — clicking its stroke in object mode. */
   | { type: 'selection/path'; pathId: string; additive: boolean }
-  /** Select every anchor inside a marquee rectangle. */
-  | { type: 'selection/box'; min: Point; max: Point }
+  /** Select both anchors of one segment — clicking its stroke in direct mode. */
+  | { type: 'selection/segment'; segmentId: string; additive: boolean }
+  /**
+   * Marquee. `nodes` picks the individual anchors inside the box (direct mode);
+   * `paths` picks whole paths that have any anchor inside it (object mode).
+   */
+  | { type: 'selection/box'; min: Point; max: Point; mode?: 'nodes' | 'paths' }
   | { type: 'selection/clear' };
 
 /**

@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { FC, Dispatch } from 'react';
 import { useRef, useState, useEffect, useMemo } from 'react';
-import { Path, Point, Tool, GRID_SNAP, SelectionBox, PRIMARY_COLOR, ANCHOR_HIT_PX, PATH_HOVER_PX } from '../types';
+import { Path, Point, Tool, GRID_SNAP, SelectionBox, PRIMARY_COLOR, ANCHOR_HIT_PX, PATH_HOVER_PX, isSelectionTool } from '../types';
 import type { RenderStyle } from '../types';
 import { findProjectedT, segmentToSvgPath } from '../utils/bezierHelper';
 import { pathsToD } from '../../lib/svg';
@@ -132,7 +132,7 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
     if (tool !== Tool.PEN) {
       setPenState(null);
     }
-    if (tool !== Tool.SELECT && tool !== Tool.PEN) {
+    if (!isSelectionTool(tool) && tool !== Tool.PEN) {
       dispatch({ type: 'selection/clear' });
     }
   }, [tool, dispatch]);
@@ -155,7 +155,7 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
         dispatch({ type: 'selection/clear' });
         setSelectionBox(null);
         setResizeState(null);
-      } else if (e.key.startsWith('Arrow') && !isTypingTarget(e) && tool === Tool.SELECT && selection.size > 0) {
+      } else if (e.key.startsWith('Arrow') && !isTypingTarget(e) && isSelectionTool(tool) && selection.size > 0) {
         const dirs: Record<string, Point> = {
           ArrowLeft: { x: -1, y: 0 },
           ArrowRight: { x: 1, y: 0 },
@@ -295,7 +295,7 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
     return closest;
   };
 
-  const showTransform = tool === Tool.SELECT &&
+  const showTransform = isSelectionTool(tool) &&
                         uniqueSelectedAnchors > 1 &&
                         selectionBounds &&
                         (selectionBounds.width > 0 || selectionBounds.height > 0);
@@ -352,6 +352,19 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
     }
 
     if (tool === Tool.SELECT) {
+      // Object mode: the stroke is the only target — anchors aren't exposed,
+      // and a hit takes the whole path so it moves and scales as one.
+      const hit = findSegmentAt(pos);
+      if (hit) {
+        startGesture();
+        setIsDragging(true);
+        dispatch({ type: 'selection/path', pathId: hit.path.id, additive: e.shiftKey });
+        return;
+      }
+      if (!e.shiftKey) dispatch({ type: 'selection/clear' });
+      setSelectionBox({ start: pos, end: pos });
+
+    } else if (tool === Tool.DIRECT) {
       // Hit Test
       let hitFound = false;
       const hitNodes = new Set<NodeKey>();
@@ -413,13 +426,13 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
             if (!isClickingSelected) dispatch({ type: 'selection/set', keys: hitNodes });
         }
       } else {
-        // Clicking the stroke itself selects the whole path (Illustrator-style),
-        // so it can then be dragged as one.
+        // Clicking the stroke takes that one segment (Illustrator-style): its
+        // two anchors, so the segment can be dragged on its own.
         const hit = findSegmentAt(pos);
         if (hit) {
             startGesture();
             setIsDragging(true);
-            dispatch({ type: 'selection/path', pathId: hit.path.id, additive: e.shiftKey });
+            dispatch({ type: 'selection/segment', segmentId: hit.segment.id, additive: e.shiftKey });
             return;
         }
 
@@ -598,6 +611,7 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
             type: 'selection/box',
             min: { x: Math.min(selectionBox.start.x, pos.x), y: Math.min(selectionBox.start.y, pos.y) },
             max: { x: Math.max(selectionBox.start.x, pos.x), y: Math.max(selectionBox.start.y, pos.y) },
+            mode: tool === Tool.SELECT ? 'paths' : 'nodes',
         });
         return;
     }
@@ -609,12 +623,14 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
         };
         lastDragPos.current = pos;
 
-        if (tool === Tool.SELECT && selection.size > 0) {
+        if (isSelectionTool(tool) && selection.size > 0) {
             dispatch({
                 type: 'nodes/translate',
                 delta,
+                // Handle pairs only matter when a single handle is being dragged,
+                // which object mode never does — it moves whole paths rigidly.
                 // Alt breaks a smooth junction instead of mirroring across it.
-                mirror: e.altKey ? 'break' : 'follow',
+                mirror: tool === Tool.DIRECT ? (e.altKey ? 'break' : 'follow') : 'none',
                 mergeKey: currentGesture(),
             });
         } else if (tool === Tool.PEN) {
@@ -631,7 +647,7 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
             }
         }
     } else {
-      if (tool === Tool.SPLIT || tool === Tool.ERASER || tool === Tool.SELECT) {
+      if (tool === Tool.SPLIT || tool === Tool.ERASER || isSelectionTool(tool)) {
         setHoveredSegmentId(findSegmentAt(pos)?.segment.id ?? null);
       } else {
         setHoveredSegmentId(null);
@@ -763,7 +779,8 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
              const pathActive = affectedPathIds.has(path.id) ||
                                 path.id === hoveredPathId ||
                                 penState?.pathId === path.id;
-             const showHandles = (tool === Tool.SELECT || tool === Tool.PEN) && pathActive;
+             // Object mode hides anchors and handles: there is nothing to grab.
+             const showHandles = (tool === Tool.DIRECT || tool === Tool.PEN) && pathActive;
 
              if (!showHandles) return null;
 

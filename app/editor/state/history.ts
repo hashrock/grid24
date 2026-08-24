@@ -22,6 +22,7 @@ const HISTORIC: Record<DocAction['type'], boolean> = {
   'anchor/toggleSmooth': true,
   'path/toggleClosed': true,
   'path/reverse': true,
+  'path/join': true,
   'segment/split': true,
   'segment/erase': true,
   'pen/commit': true,

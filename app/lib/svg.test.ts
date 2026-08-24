@@ -113,3 +113,19 @@ describe('pathToD', () => {
     expect(pathsToD([{ id: 'P', closed: false, segments: [] }])).toEqual([]);
   });
 });
+
+describe("coordinate rounding", () => {
+  it("trims curve maths to three decimals", () => {
+    const p: Path = {
+      id: "P",
+      closed: false,
+      segments: [line("a", pt(0, 0), pt(5.895430500338414, 0))],
+    };
+    expect(pathToD(p)).toBe("M 0 0 C 0 0, 5.895 0, 5.895 0");
+  });
+
+  it("leaves whole and half units alone", () => {
+    const p: Path = { id: "P", closed: false, segments: [line("a", pt(0, 0), pt(10.5, 0))] };
+    expect(pathToD(p)).toBe("M 0 0 C 0 0, 10.5 0, 10.5 0");
+  });
+});

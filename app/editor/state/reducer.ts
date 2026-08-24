@@ -4,6 +4,7 @@ import {
   EMPTY_SELECTION,
   applyHandleMirror,
   eachSegment,
+  endpointPoint,
   expandToControls,
   findPath,
   locateSegment,
@@ -11,6 +12,8 @@ import {
   mapPathSegments,
   mapPaths,
   mapSegments,
+  moveEndpoint,
+  near,
   parseNodeKey,
   pathIds,
   pointKey,
@@ -102,7 +105,10 @@ export function docReducer(state: DocState, action: DocAction): DocState {
     }
 
     case 'nodes/scale':
-      return withPaths(state, scaleNodes(state.paths, action.from, action.origin, action.sx, action.sy));
+      return withPaths(
+        state,
+        scaleNodes(state.paths, action.from, action.origin, action.sx, action.sy, action.snap ?? 0)
+      );
 
     case 'nodes/delete': {
       if (state.selection.size === 0) return state;
@@ -204,6 +210,80 @@ export function docReducer(state: DocState, action: DocAction): DocState {
         paths.push(...out);
       }
       return { paths, selection: pruneSelection(state.selection, paths) };
+    }
+
+    case 'path/join': {
+      const a = findPath(state.paths, action.a.pathId);
+      const b = findPath(state.paths, action.b.pathId);
+      if (!a || !b || a.closed || b.closed) return state;
+      if (a.segments.length === 0 || b.segments.length === 0) return state;
+      // Two references to the *same* end connect nothing.
+      if (a.id === b.id && action.a.end === action.b.end) return state;
+
+      const pa = endpointPoint(a, action.a.end);
+      const pb = endpointPoint(b, action.b.end);
+      // Ends that already meet fuse into one anchor; ends that are apart keep
+      // their positions and get a straight segment between them. `at` is a
+      // caller-forced weld — a dragged endpoint dropped onto another one.
+      const weldAt = action.at ?? (near(pa, pb) ? pa : null);
+
+      if (a.id === b.id) {
+        // Head meets tail on one path: that's what closing it means. Without a
+        // weld the closing straight line is the `Z` the renderer already draws.
+        if (!weldAt) return withPaths(state, mapPath(state.paths, a.id, (p) => ({ ...p, closed: true })));
+        const welded = moveEndpoint(moveEndpoint(a, 'head', weldAt), 'tail', weldAt);
+        const first = welded.segments[0];
+        const last = welded.segments[welded.segments.length - 1];
+        return {
+          paths: mapPath(state.paths, a.id, () => ({ ...welded, closed: true })),
+          selection: new Set([pointKey(first.id, 'p1'), pointKey(last.id, 'p2')]),
+        };
+      }
+
+      // Orient both sides so the chain runs a's tail -> b's head.
+      const oriented = (path: Path, end: 'head' | 'tail', flip: 'head' | 'tail') =>
+        end === flip ? reversePath(path) : path;
+      let head = oriented(a, action.a.end, 'head');
+      let tail = oriented(b, action.b.end, 'tail');
+      if (weldAt) {
+        head = moveEndpoint(head, 'tail', weldAt);
+        tail = moveEndpoint(tail, 'head', weldAt);
+      }
+
+      const junction = head.segments[head.segments.length - 1];
+      const bridge: Segment | null = weldAt
+        ? null
+        : {
+            id: action.id,
+            p1: { ...junction.p2 },
+            c1: { ...junction.p2 },
+            c2: { ...tail.segments[0].p1 },
+            p2: { ...tail.segments[0].p1 },
+            isSmoothP2: false,
+          };
+
+      const merged: Path = {
+        id: head.id,
+        closed: false,
+        // The junction is a corner either way: the handles meeting there were
+        // never a mirrored pair, and pretending otherwise would move one.
+        segments: [
+          ...head.segments.slice(0, -1),
+          { ...junction, isSmoothP2: false },
+          ...(bridge ? [bridge] : []),
+          ...tail.segments,
+        ],
+      };
+      const paths = state.paths
+        .filter((p) => p.id !== b.id)
+        .map((p) => (p.id === a.id ? merged : p));
+      return {
+        paths,
+        selection: new Set([
+          pointKey(junction.id, 'p2'),
+          pointKey(tail.segments[0].id, 'p1'),
+        ]),
+      };
     }
 
     case 'pen/commit': {

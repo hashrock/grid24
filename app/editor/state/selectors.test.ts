@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  joinTargets,
   openEndpoints,
   pathIdOfSegment,
   placedSegments,
@@ -50,10 +51,10 @@ describe('pathIdOfSegment', () => {
 describe('openEndpoints', () => {
   it('reports head and tail of every open path', () => {
     expect(openEndpoints(document())).toEqual([
-      { pathId: 'P', end: 'head', point: pt(0, 0) },
-      { pathId: 'P', end: 'tail', point: pt(20, 0) },
-      { pathId: 'Q', end: 'head', point: pt(0, 5) },
-      { pathId: 'Q', end: 'tail', point: pt(10, 5) },
+      { pathId: 'P', end: 'head', point: pt(0, 0), key: 'P1::p1' },
+      { pathId: 'P', end: 'tail', point: pt(20, 0), key: 'P2::p2' },
+      { pathId: 'Q', end: 'head', point: pt(0, 5), key: 'Q1::p1' },
+      { pathId: 'Q', end: 'tail', point: pt(10, 5), key: 'Q1::p2' },
     ]);
   });
 
@@ -107,5 +108,36 @@ describe('uniqueSelectedAnchors', () => {
 
   it('is zero for an empty selection', () => {
     expect(uniqueSelectedAnchors(document(), new Set())).toBe(0);
+  });
+});
+
+
+describe('joinTargets', () => {
+  const refs = (r: ReturnType<typeof joinTargets>) => r?.map((ep) => [ep.pathId, ep.end]) ?? null;
+
+  it('picks the two selected free endpoints', () => {
+    expect(refs(joinTargets(document(), new Set(['P2::p2', 'Q1::p1'])))).toEqual([
+      ['P', 'tail'],
+      ['Q', 'head'],
+    ]);
+  });
+
+  it('offers both ends of one open path — joining those closes it', () => {
+    expect(refs(joinTargets(document(), new Set(['P1::p1', 'P2::p2'])))).toEqual([
+      ['P', 'head'],
+      ['P', 'tail'],
+    ]);
+  });
+
+  it('is null for a mid-path anchor, one endpoint, or three of them', () => {
+    // P1::p2 is a junction inside P, not a free end.
+    expect(joinTargets(document(), new Set(['P1::p2', 'Q1::p1']))).toBeNull();
+    expect(joinTargets(document(), new Set(['Q1::p1']))).toBeNull();
+    expect(joinTargets(document(), new Set(['P1::p1', 'P2::p2', 'Q1::p1']))).toBeNull();
+  });
+
+  it('ignores the ends of a closed path — it has none free', () => {
+    const paths = [polyline('C', [pt(0, 0), pt(10, 0), pt(10, 10)], true), polyline('Q', [pt(0, 5), pt(10, 5)])];
+    expect(joinTargets(paths, new Set(['C1::p1', 'Q1::p1']))).toBeNull();
   });
 });

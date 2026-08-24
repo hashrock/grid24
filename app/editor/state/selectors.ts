@@ -1,6 +1,6 @@
 import type { Path, Point, Segment } from '../types';
 import { NODE_TYPES, eachSegment, expandToControls, parseNodeKey, pointKey } from './geometry';
-import type { NodeKey } from './types';
+import type { EndpointRef, NodeKey } from './types';
 
 /**
  * Derived views of the document. Pure functions of (paths, selection) so the
@@ -38,10 +38,10 @@ export const pathIdOfSegment = (paths: Path[], segmentId: string | null): string
   return null;
 };
 
-export interface Endpoint {
-  pathId: string;
-  end: 'head' | 'tail';
+export interface Endpoint extends EndpointRef {
   point: Point;
+  /** Node key of the anchor sitting there — what the selection holds. */
+  key: NodeKey;
 }
 
 /**
@@ -52,14 +52,31 @@ export const openEndpoints = (paths: Path[]): Endpoint[] => {
   const eps: Endpoint[] = [];
   for (const path of paths) {
     if (path.closed || path.segments.length === 0) continue;
-    eps.push({ pathId: path.id, end: 'head', point: path.segments[0].p1 });
-    eps.push({
-      pathId: path.id,
-      end: 'tail',
-      point: path.segments[path.segments.length - 1].p2,
-    });
+    const first = path.segments[0];
+    const last = path.segments[path.segments.length - 1];
+    eps.push({ pathId: path.id, end: 'head', point: first.p1, key: pointKey(first.id, 'p1') });
+    eps.push({ pathId: path.id, end: 'tail', point: last.p2, key: pointKey(last.id, 'p2') });
   }
   return eps;
+};
+
+/** The free endpoints the selection is holding — a Join operates on these. */
+export const selectedEndpoints = (
+  paths: Path[],
+  selection: ReadonlySet<NodeKey>
+): Endpoint[] => openEndpoints(paths).filter((ep) => selection.has(ep.key));
+
+/**
+ * The two free endpoints a Join would weld, or null when the selection isn't
+ * exactly two of them. Both ends of one open path count — joining those closes
+ * the path.
+ */
+export const joinTargets = (
+  paths: Path[],
+  selection: ReadonlySet<NodeKey>
+): [Endpoint, Endpoint] | null => {
+  const hits = selectedEndpoints(paths, selection);
+  return hits.length === 2 ? [hits[0], hits[1]] : null;
 };
 
 export interface Bounds {

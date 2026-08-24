@@ -6,6 +6,12 @@ export type NodeType = 'p1' | 'c1' | 'c2' | 'p2';
 /** Identifies one node of one segment: `${segmentId}::${NodeType}`. */
 export type NodeKey = string;
 
+/** One free end of an open path — the unit both join paths speak in. */
+export interface EndpointRef {
+  pathId: string;
+  end: 'head' | 'tail';
+}
+
 /**
  * Everything that is *document* state: saved to the server and restored by
  * undo/redo. Transient UI (tool, viewport, pen draft, hover, render style)
@@ -34,7 +40,7 @@ export type DocAction =
   /** Move the selection by `delta` (drag or arrow keys). */
   | { type: 'nodes/translate'; delta: Point; mirror?: MirrorMode }
   /** Scale the selection from a fixed origin (transform box handles). */
-  | { type: 'nodes/scale'; origin: Point; sx: number; sy: number; from: Record<NodeKey, Point> }
+  | { type: 'nodes/scale'; origin: Point; sx: number; sy: number; from: Record<NodeKey, Point>; snap?: number }
   /** Delete anchors (with their segments) or retract selected handles. */
   | { type: 'nodes/delete' }
   /** Toggle smooth/corner at `anchorKey`, or at every selected anchor. */
@@ -43,6 +49,15 @@ export type DocAction =
   | { type: 'path/toggleClosed' }
   /** Flip a path's direction, keeping segment ids (used to continue from its head). */
   | { type: 'path/reverse'; pathId: string }
+  /**
+   * Connect two free endpoints, Illustrator-style: coincident ends weld into
+   * one anchor, ends that are apart are bridged by a straight segment (which
+   * is why an `id` is always required). Two ends of the same path close it;
+   * ends of different paths merge into one, reversing whichever side needs it
+   * so the chain runs head-to-tail. `at` forces a weld at that point — what
+   * dropping a dragged endpoint onto another one does.
+   */
+  | { type: 'path/join'; id: string; a: EndpointRef; b: EndpointRef; at?: Point }
   /** Cut one segment in two at curve parameter `t`. */
   | { type: 'segment/split'; segmentId: string; t: number; ids: [string, string] }
   | { type: 'segment/erase'; segmentId: string }

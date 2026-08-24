@@ -14,9 +14,10 @@ interface EditorProps {
   onTablerImport?: (name: string) => void;
 }
 
-// Render style is a per-user viewing preference, not icon data — it lives in
-// localStorage so it carries across icons and reloads.
+// Render style and guides are per-user viewing preferences, not icon data —
+// they live in localStorage so they carry across icons and reloads.
 const RENDER_STYLE_KEY = 'grid24:renderStyle';
+const GUIDES_KEY = 'grid24:showGuides';
 
 const readStoredRenderStyle = (): RenderStyle | null => {
   try {
@@ -40,25 +41,33 @@ const App: FC<EditorProps> = ({ initialPaths = [], onChange, onTablerImport }) =
   // Tabler icons are designed on a 24x24 grid with a 2px stroke.
   const gridSize = 24;
 
-  // Stroke rendering (width / cap / join). Starts at the default so SSR and
-  // the first client render agree; the stored value is applied after mount.
+  // Stroke rendering (width / cap / join) and the keyline guides. Both start
+  // at their default so SSR and the first client render agree; the stored
+  // values are applied after mount.
   const [renderStyle, setRenderStyle] = useState<RenderStyle>(DEFAULT_RENDER_STYLE);
-  const renderStyleLoaded = useRef(false);
+  const [showGuides, setShowGuides] = useState(false);
+  const prefsLoaded = useRef(false);
 
   useEffect(() => {
     const stored = readStoredRenderStyle();
     if (stored) setRenderStyle(stored);
-    renderStyleLoaded.current = true;
+    try {
+      setShowGuides(window.localStorage.getItem(GUIDES_KEY) === '1');
+    } catch {
+      // Storage unavailable — guides just start off.
+    }
+    prefsLoaded.current = true;
   }, []);
 
   useEffect(() => {
-    if (!renderStyleLoaded.current) return;
+    if (!prefsLoaded.current) return;
     try {
       window.localStorage.setItem(RENDER_STYLE_KEY, JSON.stringify(renderStyle));
+      window.localStorage.setItem(GUIDES_KEY, showGuides ? '1' : '0');
     } catch {
       // Private mode / storage full — the setting just won't persist.
     }
-  }, [renderStyle]);
+  }, [renderStyle, showGuides]);
 
   // Notify the parent (Edit page) so it can debounce-save to the server.
   // Selection-only changes don't touch `paths`, so they never trigger a save.
@@ -78,6 +87,7 @@ const App: FC<EditorProps> = ({ initialPaths = [], onChange, onTablerImport }) =
           tool={tool}
           gridSize={gridSize}
           renderStyle={renderStyle}
+          showGuides={showGuides}
         />
       </div>
 
@@ -92,6 +102,8 @@ const App: FC<EditorProps> = ({ initialPaths = [], onChange, onTablerImport }) =
           onTablerImport={onTablerImport}
           renderStyle={renderStyle}
           setRenderStyle={setRenderStyle}
+          showGuides={showGuides}
+          setShowGuides={setShowGuides}
         />
       </div>
     </div>

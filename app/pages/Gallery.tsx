@@ -21,7 +21,7 @@ export default function Gallery({
 }) {
   return (
     <div className="min-h-screen">
-      <Head title="grid24 — 公開アイコンギャラリー" />
+      <Head title="chibicon — 公開アイコンギャラリー" />
       <Nav user={user} />
       <main className="mx-auto max-w-5xl px-6 py-10">
         <div className="anim-header mb-8">

@@ -9,7 +9,7 @@ export function Nav({ user }: { user: SessionUser | null }) {
         <Link href="/" className="flex items-center gap-2 font-mono text-lg font-bold">
           <span aria-hidden>▦</span>
           <span>
-            grid<span className="text-neutral-500">24</span>
+            chibi<span className="text-neutral-500">con</span>
           </span>
         </Link>
         <nav className="flex items-center gap-4 text-sm">

@@ -16,13 +16,30 @@ interface EditorProps {
 
 // Render style and guides are per-user viewing preferences, not icon data —
 // they live in localStorage so they carry across icons and reloads.
-const RENDER_STYLE_KEY = 'grid24:renderStyle';
-const GUIDES_KEY = 'grid24:showGuides';
+const RENDER_STYLE_KEY = 'chibicon:renderStyle';
+const GUIDES_KEY = 'chibicon:showGuides';
+
+// The `grid24:` prefix predates the rename. Reading it as a fallback means a
+// preference set before the rename isn't silently thrown away; the next write
+// lands under the new key and the old one just goes stale.
+const LEGACY_KEY: Record<string, string> = {
+  [RENDER_STYLE_KEY]: 'grid24:renderStyle',
+  [GUIDES_KEY]: 'grid24:showGuides',
+};
+
+const readStored = (key: string): string | null => {
+  try {
+    return window.localStorage.getItem(key) ?? window.localStorage.getItem(LEGACY_KEY[key]);
+  } catch {
+    // Private mode / storage disabled — fall back to the defaults.
+    return null;
+  }
+};
 
 const readStoredRenderStyle = (): RenderStyle | null => {
+  const raw = readStored(RENDER_STYLE_KEY);
+  if (!raw) return null;
   try {
-    const raw = window.localStorage.getItem(RENDER_STYLE_KEY);
-    if (!raw) return null;
     return { ...DEFAULT_RENDER_STYLE, ...JSON.parse(raw) };
   } catch {
     return null;
@@ -51,11 +68,7 @@ const App: FC<EditorProps> = ({ initialPaths = [], onChange, onTablerImport }) =
   useEffect(() => {
     const stored = readStoredRenderStyle();
     if (stored) setRenderStyle(stored);
-    try {
-      setShowGuides(window.localStorage.getItem(GUIDES_KEY) === '1');
-    } catch {
-      // Storage unavailable — guides just start off.
-    }
+    setShowGuides(readStored(GUIDES_KEY) === '1');
     prefsLoaded.current = true;
   }, []);
 

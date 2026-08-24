@@ -92,7 +92,7 @@ export default function IconsShow({
 
   return (
     <div className="min-h-screen">
-      <Head title={`${icon.name} — grid24`} />
+      <Head title={`${icon.name} — chibicon`} />
       <Nav user={user} />
 
       <main className="mx-auto max-w-3xl px-6 py-10">

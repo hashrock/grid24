@@ -163,27 +163,82 @@ export const translateNodes = (paths: Path[], keys: ReadonlySet<NodeKey>, delta:
   });
 };
 
-/** Scale the nodes captured in `from` around `origin`. */
+const roundTo = (v: number, step: number): number =>
+  step > 0 ? Math.round(v / step) * step : v;
+
+/**
+ * Scale the nodes captured in `from` around `origin`.
+ *
+ * With `snap > 0` the *anchors* land back on the grid and their attached
+ * handle rides along by the same correction. Rounding the handle independently
+ * would shorten or lengthen it relative to its anchor, so a resized curve would
+ * slowly lose its shape across repeated gestures.
+ */
 export const scaleNodes = (
   paths: Path[],
   from: Record<NodeKey, Point>,
   origin: Point,
   sx: number,
-  sy: number
+  sy: number,
+  snap = 0
 ): Path[] =>
   mapSegments(paths, (seg) => {
-    let moved = seg;
+    const scaled: Partial<Record<NodeType, Point>> = {};
     for (const t of NODE_TYPES) {
       const start = from[pointKey(seg.id, t)];
       if (!start) continue;
-      const x = origin.x + (start.x - origin.x) * sx;
-      const y = origin.y + (start.y - origin.y) * sy;
-      if (x === seg[t].x && y === seg[t].y) continue;
+      scaled[t] = {
+        x: origin.x + (start.x - origin.x) * sx,
+        y: origin.y + (start.y - origin.y) * sy,
+      };
+    }
+
+    if (snap > 0) {
+      for (const [anchor, handle] of [['p1', 'c1'], ['p2', 'c2']] as const) {
+        const a = scaled[anchor];
+        if (!a) continue;
+        const dx = roundTo(a.x, snap) - a.x;
+        const dy = roundTo(a.y, snap) - a.y;
+        if (dx === 0 && dy === 0) continue;
+        scaled[anchor] = { x: a.x + dx, y: a.y + dy };
+        const h = scaled[handle];
+        if (h) scaled[handle] = { x: h.x + dx, y: h.y + dy };
+      }
+    }
+
+    let moved = seg;
+    for (const t of NODE_TYPES) {
+      const p = scaled[t];
+      if (!p || (p.x === seg[t].x && p.y === seg[t].y)) continue;
       if (moved === seg) moved = { ...seg };
-      moved[t] = { x, y };
+      moved[t] = p;
     }
     return moved;
   });
+
+/** The free anchor at one end of an open path. */
+export const endpointPoint = (path: Path, end: 'head' | 'tail'): Point =>
+  end === 'head' ? path.segments[0].p1 : path.segments[path.segments.length - 1].p2;
+
+/**
+ * Move one end anchor of a path to `to`, carrying its attached handle by the
+ * same delta so the curve keeps its shape right up to the junction.
+ */
+export const moveEndpoint = (path: Path, end: 'head' | 'tail', to: Point): Path => {
+  if (path.segments.length === 0) return path;
+  const i = end === 'head' ? 0 : path.segments.length - 1;
+  const seg = path.segments[i];
+  const anchor = end === 'head' ? seg.p1 : seg.p2;
+  const dx = to.x - anchor.x;
+  const dy = to.y - anchor.y;
+  if (dx === 0 && dy === 0) return path;
+  const shift = (p: Point): Point => ({ x: p.x + dx, y: p.y + dy });
+  const segments = path.segments.slice();
+  segments[i] = end === 'head'
+    ? { ...seg, p1: shift(seg.p1), c1: shift(seg.c1) }
+    : { ...seg, p2: shift(seg.p2), c2: shift(seg.c2) };
+  return { ...path, segments };
+};
 
 /**
  * Reverse a path's direction. Ids are preserved so callers can keep referring

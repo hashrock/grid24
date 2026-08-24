@@ -7,8 +7,11 @@ import { findProjectedT, segmentToSvgPath } from '../utils/bezierHelper';
 import { pathsToD } from '../../lib/svg';
 import { v4 as uuidv4 } from 'uuid';
 import {
+  EPS,
+  NODE_TYPES,
   findPath,
   openEndpoints,
+  selectedEndpoints as selectedEndpointsOf,
   pathIdOfSegment,
   placedSegments,
   pointKey,
@@ -18,7 +21,7 @@ import {
   selectionBounds as selectionBoundsOf,
   uniqueSelectedAnchors as uniqueSelectedAnchorsOf,
 } from '../state';
-import type { Bounds, EditorAction, NodeKey } from '../state';
+import type { Bounds, EditorAction, Endpoint, NodeKey } from '../state';
 
 interface CanvasProps {
   paths: Path[];
@@ -28,6 +31,8 @@ interface CanvasProps {
   gridSize: number;
   /** Stroke width / cap / join used for the on-canvas stroke preview. */
   renderStyle: RenderStyle;
+  /** Draw the keyline guides under the icon. A view aid, never icon data. */
+  showGuides: boolean;
 }
 
 interface PenState {
@@ -55,6 +60,15 @@ const MAX_VIEW_W = 200;
 // Consecutive arrow-key nudges within this window collapse into one undo step.
 const NUDGE_MERGE_MS = 800;
 
+// Guide colour: cyan, the usual one for guides, and deliberately not the blue
+// accent so a guide never reads as something selected.
+const GUIDE_COLOR = '#0891b2';
+
+// A selection can't be scaled below this many grid units. Past zero the shape
+// mirrors itself, and at exactly zero the box has no width left to drag back
+// out of — the gesture would be unrecoverable without an undo.
+const MIN_SCALE_SIZE = 1;
+
 const isTypingTarget = (e: KeyboardEvent) => {
   const t = e.target as HTMLElement | null;
   return t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable;
@@ -66,9 +80,11 @@ interface ResizeState {
    *  absolute (dragging back to the start restores the original shape). */
   initialBounds: Bounds;
   initialPoints: Record<NodeKey, Point>;
+  /** Cursor offset from the corner at pointerdown, so the box doesn't jump. */
+  grab: Point;
 }
 
-const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, renderStyle }) => {
+const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, renderStyle, showGuides }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoveredSegmentId, setHoveredSegmentId] = useState<string | null>(null);
   const [previewPoint, setPreviewPoint] = useState<Point | null>(null);
@@ -77,6 +93,15 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
   // Open-path endpoint under the cursor in Pen mode (continue / join target)
   const [hoverEndpoint, setHoverEndpoint] = useState<Point | null>(null);
+  // Free endpoint a dragged endpoint will weld onto when the drag ends. The
+  // ref is what pointerup reads: the last pointermove's state update may not
+  // have been rendered yet, and a stale `null` there would drop the join.
+  const [joinTarget, setJoinTarget] = useState<Endpoint | null>(null);
+  const joinTargetRef = useRef<Endpoint | null>(null);
+  const setJoinTargetBoth = (ep: Endpoint | null) => {
+    joinTargetRef.current = ep;
+    setJoinTarget(ep);
+  };
 
   // --- Undo grouping ---
   // One pointer gesture = one undo step. Every edit dispatched between
@@ -126,6 +151,11 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
   const upp = Math.max(viewBox.w / svgSize.w, viewBox.h / svgSize.h);
   const anchorHitR = ANCHOR_HIT_PX * upp;
 
+  // Free endpoints the selection holds. Two of them is a Join (Cmd+J); one of
+  // them is a drag that can weld itself onto another end when it lands.
+  const selectedEnds = useMemo(() => selectedEndpointsOf(paths, selection), [paths, selection]);
+  const joinable = selectedEnds.length === 2 ? selectedEnds : null;
+
   const resetView = () => setViewBox({ x: -2, y: -2, w: gridSize + 4, h: gridSize + 4 });
 
   useEffect(() => {
@@ -146,6 +176,20 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
         // The pen draft may reference segments that no longer exist. The
         // selection needs no cleanup: history restores it along with the doc.
         setPenState(null);
+        return;
+      }
+      // Cmd/Ctrl+J welds two selected free endpoints — Illustrator's Join.
+      // Two ends of the same path close it.
+      if (mod && !isTypingTarget(e) && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        if (joinable) {
+          dispatch({
+            type: 'path/join',
+            id: uuidv4(),
+            a: { pathId: joinable[0].pathId, end: joinable[0].end },
+            b: { pathId: joinable[1].pathId, end: joinable[1].end },
+          });
+        }
         return;
       }
       if (e.key === 'Escape') {
@@ -182,7 +226,7 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [tool, penState, selection, dispatch]);
+  }, [tool, penState, selection, joinable, dispatch]);
 
   // Alt pressed or released mid-drag re-applies the break at the last cursor
   // position. Without this the change would only land on the next pointer move,
@@ -306,6 +350,19 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
   // when a path is drawn as one `d`.
   const previewPaths = useMemo(() => pathsToD(paths), [paths]);
 
+  // How far the closest anchor or handle is. The transform box sits *on* the
+  // anchors, so in direct mode a corner anchor would be unreachable if its
+  // resize handle always won the hit test — the nearer target takes it.
+  const nearestNodeDist = (pos: Point) => {
+    let best = Infinity;
+    for (const { segment } of placed) {
+      for (const t of NODE_TYPES) {
+        best = Math.min(best, Math.hypot(segment[t].x - pos.x, segment[t].y - pos.y));
+      }
+    }
+    return best;
+  };
+
   // Segment whose curve passes under `pos` (within the hover tolerance).
   const findSegmentAt = (pos: Point) => {
     let minDist = PATH_HOVER_PX * upp;
@@ -342,7 +399,6 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
 
     // 1. Check Resize Handles
     if (showTransform && selectionBounds) {
-        const handleSize = ANCHOR_HIT_PX * upp;
         const handles: { type: ResizeHandleType, x: number, y: number }[] = [
             { type: 'nw', x: selectionBounds.minX, y: selectionBounds.minY },
             { type: 'ne', x: selectionBounds.maxX, y: selectionBounds.minY },
@@ -350,7 +406,19 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
             { type: 'se', x: selectionBounds.maxX, y: selectionBounds.maxY },
         ];
 
-        const hitHandle = handles.find(h => Math.hypot(h.x - pos.x, h.y - pos.y) < handleSize);
+        // Nearest wins: on a small selection all four hit circles overlap, and
+        // taking the first match would hand back a corner the cursor isn't on.
+        let hitHandle: (typeof handles)[number] | null = null;
+        let bestDist = ANCHOR_HIT_PX * upp;
+        for (const h of handles) {
+            const d = Math.hypot(h.x - pos.x, h.y - pos.y);
+            if (d < bestDist) {
+                bestDist = d;
+                hitHandle = h;
+            }
+        }
+        if (hitHandle && tool === Tool.DIRECT && nearestNodeDist(pos) < bestDist) hitHandle = null;
+
         if (hitHandle) {
             startGesture();
             const initialPoints: Record<NodeKey, Point> = {};
@@ -370,7 +438,8 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
             setResizeState({
                 handle: hitHandle.type,
                 initialBounds: selectionBounds,
-                initialPoints
+                initialPoints,
+                grab: { x: pos.x - hitHandle.x, y: pos.y - hitHandle.y },
             });
             return;
         }
@@ -601,7 +670,7 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
     const pos = getMousePos(e);
 
     if (resizeState) {
-        const { handle, initialBounds, initialPoints } = resizeState;
+        const { handle, initialBounds, initialPoints, grab } = resizeState;
 
         const oldW = initialBounds.maxX - initialBounds.minX;
         const oldH = initialBounds.maxY - initialBounds.minY;
@@ -614,10 +683,23 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
             x: west ? initialBounds.maxX : initialBounds.minX,
             y: north ? initialBounds.maxY : initialBounds.minY,
         };
-        let sx = west ? (origin.x - pos.x) / oldW : (pos.x - origin.x) / oldW;
-        let sy = north ? (origin.y - pos.y) / oldH : (pos.y - origin.y) / oldH;
-        if (Math.abs(oldW) < 0.0001) sx = 1;
-        if (Math.abs(oldH) < 0.0001) sy = 1;
+
+        // Clamping the corner rather than the ratio stops the box at its
+        // minimum size and stops it flipping through the origin in one step.
+        // A selection already thinner than the minimum keeps its own size as
+        // the floor, so grabbing it doesn't inflate it on the first pixel.
+        const stop = (v: number, o: number, min: number, before: boolean) =>
+            before ? Math.min(v, o - min) : Math.max(v, o + min);
+        // Subtracting the grab offset keeps the corner under the same part of
+        // the cursor it was picked up by, so the shape never jumps.
+        const corner = {
+            x: stop(pos.x - grab.x, origin.x, Math.min(MIN_SCALE_SIZE, oldW), west),
+            y: stop(pos.y - grab.y, origin.y, Math.min(MIN_SCALE_SIZE, oldH), north),
+        };
+
+        // A selection with no extent on an axis has no direction to scale in.
+        const sx = oldW < EPS ? 1 : (west ? origin.x - corner.x : corner.x - origin.x) / oldW;
+        const sy = oldH < EPS ? 1 : (north ? origin.y - corner.y : corner.y - origin.y) / oldH;
 
         dispatch({
             type: 'nodes/scale',
@@ -625,6 +707,8 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
             sx,
             sy,
             from: initialPoints,
+            // Anchors land back on the grid, like every other edit does.
+            snap: GRID_SNAP,
             mergeKey: currentGesture(),
         });
         return;
@@ -658,6 +742,15 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
                 mirror: tool === Tool.DIRECT ? (e.altKey ? 'break' : 'follow') : 'none',
                 mergeKey: currentGesture(),
             });
+            // Dragging a single free end: highlight the end it will weld onto.
+            // The cursor is the probe, not the anchor — `paths` still holds the
+            // pre-dispatch position at this point.
+            const target = tool === Tool.DIRECT && selectedEnds.length === 1
+                ? endpoints.find(ep =>
+                    !selection.has(ep.key) &&
+                    Math.hypot(ep.point.x - pos.x, ep.point.y - pos.y) < anchorHitR)
+                : undefined;
+            setJoinTargetBoth(target ?? null);
         } else if (tool === Tool.PEN) {
              if (penState?.isDraggingStart) {
                 setPenState(prev => prev ? ({ ...prev, outgoingControl: pos }) : null);
@@ -693,6 +786,20 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
   };
 
   const handlePointerUp = () => {
+    // Dropping a dragged endpoint onto another free end welds the two. It
+    // carries the drag's merge key, so the move and the join undo as one.
+    const weld = joinTargetRef.current;
+    if (isDragging && weld && selectedEnds.length === 1) {
+      dispatch({
+        type: 'path/join',
+        id: uuidv4(),
+        a: { pathId: selectedEnds[0].pathId, end: selectedEnds[0].end },
+        b: { pathId: weld.pathId, end: weld.end },
+        at: weld.point,
+        mergeKey: currentGesture(),
+      });
+    }
+    setJoinTargetBoth(null);
     setIsPanning(false);
     lastPanClient.current = null;
     setIsDragging(false);
@@ -718,6 +825,32 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
     return <g>{lines}</g>;
   };
 
+  /**
+   * Keyline guides: the shapes an icon set aligns to so a square, a circle and
+   * a bar read as the same size. Everything is derived from `gridSize` so the
+   * proportions hold if the canvas ever stops being 24 units.
+   */
+  const renderGuides = () => {
+    const u = gridSize / 24;
+    const inset = (n: number) => ({
+      x: n * u,
+      y: n * u,
+      width: gridSize - 2 * n * u,
+      height: gridSize - 2 * n * u,
+    });
+    return (
+      <g pointerEvents="none" fill="none" stroke={GUIDE_COLOR} strokeWidth={0.07 * u} opacity={0.7}>
+        {/* Live area (20x20): the icon should not reach past it. */}
+        <rect {...inset(2)} strokeDasharray={`${0.5 * u} ${0.5 * u}`} opacity={0.8} />
+        {/* Keyline square (18x18), circle (d20), and the two bars (16x20 / 20x16). */}
+        <rect {...inset(3)} />
+        <circle cx={gridSize / 2} cy={gridSize / 2} r={10 * u} />
+        <rect x={4 * u} y={2 * u} width={16 * u} height={20 * u} rx={u} />
+        <rect x={2 * u} y={4 * u} width={20 * u} height={16 * u} rx={u} />
+      </g>
+    );
+  };
+
   const zoomPercent = Math.round(((gridSize + 4) / viewBox.w) * 100);
   const cursorClass = isPanning ? 'cursor-grabbing' : isSpacePressed ? 'cursor-grab' : 'cursor-crosshair';
 
@@ -734,6 +867,7 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
         >
           {renderGrid()}
           <rect x="0" y="0" width={gridSize} height={gridSize} fill="none" stroke="#404040" strokeWidth="0.1" />
+          {showGuides && renderGuides()}
 
           {/* Stroke preview: the icon as it actually renders, at the current
               width / cap / join. Dimmed so the skeleton and handles stay readable. */}
@@ -913,6 +1047,19 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
                   />
               );
           })()}
+
+          {/* Weld target: the free endpoint a dragged endpoint will join onto */}
+          {joinTarget && (
+             <circle
+                cx={joinTarget.point.x}
+                cy={joinTarget.point.y}
+                r={6 * upp}
+                fill={PRIMARY_COLOR}
+                fillOpacity={0.4}
+                stroke={PRIMARY_COLOR}
+                strokeWidth={1 * upp}
+             />
+          )}
 
           {/* Continue / join target: free endpoint of an open path under the pen */}
           {tool === Tool.PEN && hoverEndpoint && !isDragging && (

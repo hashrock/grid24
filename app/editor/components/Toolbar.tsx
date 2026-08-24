@@ -3,11 +3,12 @@ import type { FC, Dispatch, SetStateAction, ReactNode } from 'react';
 import { useState } from 'react';
 import { DEFAULT_RENDER_STYLE, Tool, Path } from '../types';
 import type { RenderStyle } from '../types';
+import { v4 as uuidv4 } from 'uuid';
 import { parsePathData } from '../../lib/pathImport';
 import { IconSvg } from '../../lib/IconSvg';
 import { AI_GENERATION_ENABLED } from '../../lib/featureFlags';
 import TablerImportDialog from './TablerImportDialog';
-import { locateSegment, parseNodeKey } from '../state';
+import { joinTargets, locateSegment, parseNodeKey } from '../state';
 import type { EditorAction, NodeKey } from '../state';
 
 interface ToolbarProps {
@@ -21,13 +22,16 @@ interface ToolbarProps {
   /** Stroke rendering preview settings (width / cap / join). */
   renderStyle: RenderStyle;
   setRenderStyle: Dispatch<SetStateAction<RenderStyle>>;
+  /** Keyline guides on the canvas — a view aid, never part of the icon. */
+  showGuides: boolean;
+  setShowGuides: Dispatch<SetStateAction<boolean>>;
 }
 
 const CAPS: RenderStyle['strokeLinecap'][] = ['butt', 'round', 'square'];
 const JOINS: RenderStyle['strokeLinejoin'][] = ['miter', 'round', 'bevel'];
 const PREVIEW_SIZES = [16, 24, 48];
 
-const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths, selection, dispatch, renderStyle, setRenderStyle }) => {
+const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths, selection, dispatch, renderStyle, setRenderStyle, showGuides, setShowGuides }) => {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [tablerOpen, setTablerOpen] = useState(false);
@@ -50,6 +54,9 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
   // Whether the first selected node reads as smooth / closed — the buttons show
   // one state for the whole selection and toggle it as a group.
   const hasSelection = selection.size > 0;
+  // Two free endpoints selected — the Join is offered explicitly here as well
+  // as on Cmd+J, since a keyboard-only command is easy to never discover.
+  const joinable = joinTargets(paths, selection);
   let isSmooth = false;
   let isClosed = false;
 
@@ -156,6 +163,17 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
 
       <div className="h-px bg-neutral-900 w-full" />
 
+      {/* Keyline guides: 20x20 live area, 18x18 square, d20 circle, 16x20 /
+          20x16 bars. A drawing aid only — never saved with the icon. */}
+      <button
+        onClick={() => setShowGuides(v => !v)}
+        className="flex items-center justify-between w-full py-2 px-3 bg-black border border-neutral-800 rounded hover:border-white transition-colors"
+        title="キーラインガイド — 20×20 のライブエリアと基準図形を表示"
+      >
+        <span className="text-xs text-white">Keyline Guides</span>
+        <div className={`w-3 h-3 rounded-sm border border-neutral-500 ${showGuides ? 'bg-cyan-500 border-cyan-500' : 'bg-black'}`} />
+      </button>
+
       {hasSelection && (
           <div className="flex flex-col gap-2 p-3 bg-neutral-900 rounded border border-neutral-800">
              <h3 className="text-xs font-bold text-neutral-400 uppercase">Selection</h3>
@@ -171,6 +189,27 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
                      <div className={`w-3 h-3 rounded-full border border-neutral-500 ${isSmooth ? "bg-white" : "bg-black"}`} />
                  </button>
              </div>
+
+             {/* Join — welds two free endpoints into one anchor. */}
+             {joinable && (
+               <div className="flex flex-col gap-1 mt-2">
+                 <label className="text-[10px] text-neutral-600 font-bold uppercase">Join</label>
+                 <button
+                    onClick={() => dispatch({
+                      type: 'path/join',
+                      id: uuidv4(),
+                      a: { pathId: joinable[0].pathId, end: joinable[0].end },
+                      b: { pathId: joinable[1].pathId, end: joinable[1].end },
+                    })}
+                    className="flex items-center justify-between w-full py-2 px-3 bg-black border border-neutral-700 rounded hover:border-white transition-colors"
+                 >
+                     <span className="text-xs text-white">
+                       {joinable[0].pathId === joinable[1].pathId ? 'パスを閉じる' : '端点を連結'}
+                     </span>
+                     <span className="text-[10px] text-neutral-500">⌘J</span>
+                 </button>
+               </div>
+             )}
 
              {/* Path Options */}
              <div className="flex flex-col gap-1 mt-2">

@@ -150,6 +150,181 @@ describe('docReducer', () => {
     it('is a no-op at scale 1 — dragging back to the start restores the shape', () => {
       expect(docReducer(before, { type: 'nodes/scale', origin: pt(0, 0), sx: 1, sy: 1, from })).toBe(before);
     });
+
+    it('snaps anchors to the grid when asked', () => {
+      const next = docReducer(before, {
+        type: 'nodes/scale',
+        origin: pt(0, 0),
+        sx: 0.73,
+        sy: 1,
+        from,
+        snap: 0.5,
+      });
+      expect(byId(next, 'P1').p2).toEqual(pt(7.5, 0));
+    });
+
+    it('carries a handle by its anchor\'s snap correction, not its own', () => {
+      const curved = doc(
+        [path('P', [curve('P1', pt(0, 0), pt(0, 0), pt(9, 0), pt(10, 0))])],
+        ['P1::p1', 'P1::p2']
+      );
+      const next = docReducer(curved, {
+        type: 'nodes/scale',
+        origin: pt(0, 0),
+        sx: 0.73,
+        sy: 1,
+        from: { ...from, 'P1::c2': pt(9, 0) },
+        snap: 0.5,
+      });
+      const seg = byId(next, 'P1');
+      // p2 scales to 7.3 and rounds up to 7.5 (+0.2); c2 scales to 6.57 and
+      // takes the same +0.2, so the handle keeps its scaled distance (0.73)
+      // from the anchor instead of being rounded to the grid on its own.
+      expect(seg.p2.x).toBeCloseTo(7.5);
+      expect(seg.p2.x - seg.c2.x).toBeCloseTo(0.73);
+    });
+  });
+
+  describe('path/join', () => {
+    // Two separate open paths whose free ends face each other across a gap.
+    const two = () =>
+      doc([
+        polyline('A', [pt(0, 0), pt(10, 0)]),
+        polyline('B', [pt(12, 0), pt(20, 0)]),
+      ]);
+
+    it('bridges ends that are apart with a straight segment', () => {
+      const next = docReducer(two(), {
+        type: 'path/join',
+        id: 'J',
+        a: { pathId: 'A', end: 'tail' },
+        b: { pathId: 'B', end: 'head' },
+      });
+      expect(shape(next)).toEqual([['A1', 'J', 'B1']]);
+      // Neither side moves — the bridge spans the gap instead.
+      expect(byId(next, 'A1').p2).toEqual(pt(10, 0));
+      expect(byId(next, 'B1').p1).toEqual(pt(12, 0));
+      expect(byId(next, 'J')).toMatchObject({ p1: pt(10, 0), p2: pt(12, 0) });
+      expect(pathById(next, 'A').closed).toBe(false);
+    });
+
+    it('welds ends that already meet, without adding a segment', () => {
+      const state = doc([
+        polyline('A', [pt(0, 0), pt(10, 0)]),
+        polyline('B', [pt(10, 0), pt(20, 0)]),
+      ]);
+      const next = docReducer(state, {
+        type: 'path/join',
+        id: 'J',
+        a: { pathId: 'A', end: 'tail' },
+        b: { pathId: 'B', end: 'head' },
+      });
+      expect(shape(next)).toEqual([['A1', 'B1']]);
+    });
+
+    it('welds at `at` even when the ends are apart — a dragged endpoint drop', () => {
+      const next = docReducer(two(), {
+        type: 'path/join',
+        id: 'J',
+        a: { pathId: 'A', end: 'tail' },
+        b: { pathId: 'B', end: 'head' },
+        at: pt(12, 0),
+      });
+      expect(shape(next)).toEqual([['A1', 'B1']]);
+      expect(byId(next, 'A1').p2).toEqual(pt(12, 0));
+      expect(byId(next, 'B1').p1).toEqual(pt(12, 0));
+    });
+
+    it('reverses whichever side needs it so the chain runs head to tail', () => {
+      // Joining A's head to B's head: A flips, so its segment order reverses.
+      const state = doc([
+        polyline('A', [pt(0, 0), pt(10, 0), pt(20, 0)]),
+        polyline('B', [pt(0, 4), pt(10, 4)]),
+      ]);
+      const next = docReducer(state, {
+        type: 'path/join',
+        id: 'J',
+        a: { pathId: 'A', end: 'head' },
+        b: { pathId: 'B', end: 'head' },
+      });
+      expect(shape(next)).toEqual([['A2', 'A1', 'J', 'B1']]);
+      expect(byId(next, 'J')).toMatchObject({ p1: pt(0, 0), p2: pt(0, 4) });
+    });
+
+    it('closes the path when both ends belong to it, leaving the shape alone', () => {
+      const state = doc([polyline('P', [pt(0, 0), pt(10, 0), pt(10, 10), pt(1, 1)])]);
+      const next = docReducer(state, {
+        type: 'path/join',
+        id: 'J',
+        a: { pathId: 'P', end: 'head' },
+        b: { pathId: 'P', end: 'tail' },
+      });
+      const p = pathById(next, 'P');
+      expect(p.closed).toBe(true);
+      // No bridge segment: the closing straight line is the `Z` of the path.
+      expect(shape(next)).toEqual([['P1', 'P2', 'P3']]);
+      expect(p.segments[0].p1).toEqual(pt(0, 0));
+    });
+
+    it('welds the two ends together when closing a path at a point', () => {
+      const state = doc([polyline('P', [pt(0, 0), pt(10, 0), pt(10, 10), pt(1, 1)])]);
+      const next = docReducer(state, {
+        type: 'path/join',
+        id: 'J',
+        a: { pathId: 'P', end: 'head' },
+        b: { pathId: 'P', end: 'tail' },
+        at: pt(0, 0),
+      });
+      const p = pathById(next, 'P');
+      expect(p.closed).toBe(true);
+      expect(p.segments[p.segments.length - 1].p2).toEqual(pt(0, 0));
+    });
+
+    it('carries the handles of both welded ends', () => {
+      const state = doc([
+        path('A', [curve('A1', pt(0, 0), pt(0, 0), pt(8, 0), pt(10, 0))]),
+        path('B', [curve('B1', pt(14, 0), pt(16, 0), pt(20, 0), pt(20, 0))]),
+      ]);
+      const next = docReducer(state, {
+        type: 'path/join',
+        id: 'J',
+        a: { pathId: 'A', end: 'tail' },
+        b: { pathId: 'B', end: 'head' },
+        at: pt(12, 0),
+      });
+      // A1 moves +2 and B1 moves -2, handles included.
+      expect(byId(next, 'A1').c2).toEqual(pt(10, 0));
+      expect(byId(next, 'B1').c1).toEqual(pt(14, 0));
+    });
+
+    it('makes the junction a corner', () => {
+      const state = doc([
+        path('A', [curve('A1', pt(0, 0), pt(0, 0), pt(8, 0), pt(10, 0), { isSmoothP2: true })]),
+        polyline('B', [pt(10, 0), pt(20, 0)]),
+      ]);
+      const next = docReducer(state, {
+        type: 'path/join',
+        id: 'J',
+        a: { pathId: 'A', end: 'tail' },
+        b: { pathId: 'B', end: 'head' },
+      });
+      expect(byId(next, 'A1').isSmoothP2).toBe(false);
+    });
+
+    it('refuses a closed path, a missing path, and the same end twice', () => {
+      const closed = doc([polyline('A', [pt(0, 0), pt(10, 0), pt(10, 10)], true), polyline('B', [pt(0, 4), pt(4, 4)])]);
+      expect(
+        docReducer(closed, { type: 'path/join', id: 'J', a: { pathId: 'A', end: 'tail' }, b: { pathId: 'B', end: 'head' } })
+      ).toBe(closed);
+
+      const state = two();
+      expect(
+        docReducer(state, { type: 'path/join', id: 'J', a: { pathId: 'A', end: 'tail' }, b: { pathId: 'nope', end: 'head' } })
+      ).toBe(state);
+      expect(
+        docReducer(state, { type: 'path/join', id: 'J', a: { pathId: 'A', end: 'tail' }, b: { pathId: 'A', end: 'tail' } })
+      ).toBe(state);
+    });
   });
 
   describe('nodes/delete', () => {

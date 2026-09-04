@@ -96,6 +96,17 @@ describe('parseContent', () => {
     expect(paths).toHaveLength(1);
     expect(paths[0].segments.map((s) => s.id)).toEqual(['a']);
   });
+
+  it('drops a segment with no id rather than keying everything off undefined', () => {
+    const { id: _id, ...noId } = stored('a', 'P', pt(0, 0), pt(10, 0));
+    const paths = parseContent(JSON.stringify([noId, noId]));
+    expect(paths).toEqual([]);
+  });
+
+  it('drops a segment whose pathId is not a string', () => {
+    const bad = { ...stored('a', 'P', pt(0, 0), pt(10, 0)), pathId: 7 };
+    expect(parseContent(JSON.stringify([bad]))).toEqual([]);
+  });
 });
 
 describe('pathToD', () => {

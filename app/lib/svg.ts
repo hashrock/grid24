@@ -13,6 +13,12 @@ const isPoint = (v: unknown): v is Point =>
 const isStoredSegment = (v: unknown): v is StoredSegment => {
   if (typeof v !== "object" || v === null) return false;
   const s = v as StoredSegment;
+  // The ids are load-bearing, not decoration: `pathId` becomes a `Path.id` and
+  // `id` becomes the segment's selection key. A row missing one would group
+  // every one of its siblings under the same `undefined` bucket and hand them
+  // all the same key, so a bad id makes a row bad data just like a bad point.
+  if (typeof s.id !== "string") return false;
+  if (s.pathId !== undefined && typeof s.pathId !== "string") return false;
   return isPoint(s.p1) && isPoint(s.c1) && isPoint(s.c2) && isPoint(s.p2);
 };
 

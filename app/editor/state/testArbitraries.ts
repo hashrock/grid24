@@ -5,6 +5,7 @@ import {
   NODE_TYPES,
   allSegments,
   endpointPoint,
+  findPath,
   expandToControls,
   parseNodeKey,
   pointKey,
@@ -178,7 +179,20 @@ export const arbStructureRecipe = fc.oneof(
     to: arbPoint,
     closing: fc.boolean(),
   }),
-  fc.record({ k: fc.constant('penJoin' as const), n: fc.nat(), e: fc.nat(), control: arbPoint }),
+  fc.record({
+    k: fc.constant('penJoin' as const),
+    n: fc.nat(),
+    e: fc.nat(),
+    from: arbPoint,
+    control: arbPoint,
+    // Which path the pen is drawing when it reaches for the target's endpoint.
+    // `missing` is the ordinary "first click of a fresh stroke lands on another
+    // path's end" gesture: the pen mints its id up front and commits nothing
+    // until the second click, so the path is not in the document yet. `self` is
+    // the one the Canvas really cannot produce, generated because the reducer
+    // has to refuse it rather than drop the target's segments.
+    source: fc.constantFrom('other' as const, 'self' as const, 'missing' as const),
+  }),
   fc.record({
     k: fc.constant('penDrag' as const),
     n: fc.nat(),
@@ -244,12 +258,13 @@ export const snapshotSelection = (state: DocState): Record<NodeKey, Point> => {
 /**
  * Turn a recipe into an action that makes sense *for this document*: indices
  * are taken modulo what is actually there, and a recipe with nothing to act on
- * yields `null` rather than an action the UI could never dispatch.
+ * yields `null` rather than an action there is nothing to aim at.
  *
- * Two shapes are excluded deliberately, because the Canvas cannot produce them
- * and the reducer does not defend against them: a `pen/join` onto the path the
- * pen is already drawing, and one naming a `pathId` that is not in the
- * document. Both drop the target path's segments on the floor.
+ * Actions the Canvas would never dispatch are generated anyway wherever the
+ * reducer is the thing that has to cope — see the `penJoin` recipe. What the
+ * driver does *not* do is hand the reducer a selection key naming a segment
+ * that is not in the document: the Canvas builds its keys by hit-testing what
+ * is on screen, and `selection/set` takes them at their word.
  */
 export const resolveRecipe = (state: DocState, r: Recipe, mint: Mint): DocAction | null => {
   const { paths } = state;
@@ -361,15 +376,27 @@ export const resolveRecipe = (state: DocState, r: Recipe, mint: Mint): DocAction
     }
 
     case 'penJoin': {
-      const source = at(paths.filter((p) => !p.closed && p.segments.length > 0), r.n);
-      if (!source) return null;
-      const target = at(openEndpoints(paths).filter((e) => e.pathId !== source.id), r.e);
+      const target = at(openEndpoints(paths), r.e);
       if (!target) return null;
+      const source =
+        r.source === 'missing'
+          ? null
+          : r.source === 'self'
+            ? findPath(paths, target.pathId)
+            : at(
+                paths.filter((p) => !p.closed && p.segments.length > 0 && p.id !== target.pathId),
+                r.n
+              );
+      // A fresh stroke has no path yet, so its id is one nobody holds.
+      const pathId = r.source === 'missing' ? mint() : source?.id;
+      if (pathId === undefined) return null;
       return {
         type: 'pen/join',
         id: mint(),
-        pathId: source.id,
-        from: { ...endpointPoint(source, 'tail') },
+        pathId,
+        // Drawing on continues from where the path ends; a fresh stroke starts
+        // wherever the first click landed.
+        from: source ? { ...endpointPoint(source, 'tail') } : r.from,
         control: r.control,
         target: { pathId: target.pathId, end: target.end, point: { ...target.point } },
       };
@@ -457,7 +484,15 @@ export const expectValidDoc = (state: DocState): void => {
       }
     }
   }
-  for (const key of state.selection) expect(parseNodeKey(key)).not.toBeNull();
+  // Selection keys address segments that are really there. `selection/set` is
+  // trusted to name live nodes (the Canvas hit-tests them), but from there on
+  // every action that retires a segment id — delete, erase, split, replace —
+  // has to take the keys naming it along with it.
+  for (const key of state.selection) {
+    const parsed = parseNodeKey(key);
+    expect(parsed).not.toBeNull();
+    expect(segmentIds.has(parsed!.segmentId)).toBe(true);
+  }
 };
 
 /**

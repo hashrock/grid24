@@ -94,6 +94,10 @@ describe('paths <-> stored round trip', () => {
 
 // --- Loading data we did not write ----------------------------------------
 
+// Ids are drawn from a tiny pool so that rows collide often: a repeated segment
+// id is exactly the shape parsing has to rename rather than pass through.
+const arbRepeatedId = fc.constantFrom('a', 'b', 'a#1');
+
 const arbStoredRow = fc.record({
   id: arbId,
   pathId: fc.option(arbId, { nil: undefined }),
@@ -137,11 +141,14 @@ const expectWellFormed = (paths: Path[]) => {
       }
     }
   }
-  // Grouping is by id, so a path id can never repeat. (Segment ids can still
-  // collide if the stored data repeats one — re-minting ids for corrupt rows
-  // would silently change segment identity, so parsing leaves that alone.)
+  // Grouping is by id, so a path id can never repeat.
   const ids = paths.map((p) => p.id);
   expect(new Set(ids).size).toBe(ids.length);
+  // Nor can a segment id: it is what a selection key and every lookup address a
+  // segment by, so a repeat would make one anchor drag two segments at once.
+  // Stored data is free to repeat one, so parsing renames the duplicate.
+  const segmentIds = paths.flatMap((p) => p.segments.map((s) => s.id));
+  expect(new Set(segmentIds).size).toBe(segmentIds.length);
 };
 
 describe('parseContent tolerates anything', () => {
@@ -158,6 +165,23 @@ describe('parseContent tolerates anything', () => {
       fc.property(fc.jsonValue(), (value) => {
         expectWellFormed(parseContent(JSON.stringify(value)));
       })
+    );
+  });
+
+  it('renames repeated segment ids instead of carrying the collision through', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({ id: arbRepeatedId, pathId: arbRepeatedId, p1: arbPoint, c1: arbPoint, c2: arbPoint, p2: arbPoint }),
+          { maxLength: 6 }
+        ),
+        (rows) => {
+          const paths = parseContent(JSON.stringify(rows));
+          expectWellFormed(paths);
+          // Nothing is dropped on the way: renaming is not deleting.
+          expect(paths.reduce((n, p) => n + p.segments.length, 0)).toBe(rows.length);
+        }
+      )
     );
   });
 

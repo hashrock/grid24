@@ -1,4 +1,5 @@
 import type { Path, Point, Segment, StoredSegment } from "../editor/types";
+import { freshId } from "./uniqueId";
 
 /**
  * The boundary between the editor's nested `Path[]` model and the flat
@@ -34,13 +35,29 @@ export function pathsFromStored(stored: StoredSegment[]): Path[] {
     }
     groups.get(pathId)!.push(s);
   }
+  // A segment id is what a selection key and every lookup address a segment by,
+  // so two segments may not share one: `locateSegment` would only ever find the
+  // first, while `mapSegments` would edit both — dragging one anchor would move
+  // a segment elsewhere in the document. Stored data can repeat an id (nothing
+  // upstream enforces it), so a repeat is renamed rather than carried through.
+  // Only the duplicate moves; the first holder keeps the id it was saved with.
+  // Seeded with every id the rows already carry, so renaming a duplicate never
+  // lands on one a different row is legitimately using further down: only the
+  // duplicate moves, and whoever was saved with an id keeps it.
+  const taken = new Set(stored.map((s) => s.id));
+  const emitted = new Set<string>();
   return order.map((id) => {
     const segs = groups.get(id)!;
     return {
       id,
       // Older data repeats the flag per segment; any one of them means closed.
       closed: segs.some((s) => s.isClosed === true),
-      segments: segs.map(({ pathId: _pathId, isClosed: _isClosed, ...seg }) => seg as Segment),
+      segments: segs.map(({ pathId: _pathId, isClosed: _isClosed, ...seg }) => {
+        const unique = emitted.has(seg.id) ? freshId(taken, seg.id, "#") : seg.id;
+        emitted.add(unique);
+        taken.add(unique);
+        return { ...seg, id: unique } as Segment;
+      }),
     };
   });
 }

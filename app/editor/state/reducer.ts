@@ -185,13 +185,15 @@ export function docReducer(state: DocState, action: DocAction): DocState {
         { ...left, p1: found.segment.p1, p2: mid },
         { ...right, p1: mid, p2: found.segment.p2 },
       ];
-      return withPaths(
-        state,
-        mapPath(state.paths, found.path.id, (path) => ({
-          ...path,
-          segments: path.segments.toSpliced(found.index, 1, ...halves),
-        }))
-      );
+      // The two halves are new segments, so the id that was cut retires with
+      // it: any selection key naming it addresses nothing and has to go, the
+      // same way erasing prunes. Left behind, such a key keeps `nodes/delete`
+      // taking its "delete anchors" branch over a segment that is not there.
+      const paths = mapPath(state.paths, found.path.id, (path) => ({
+        ...path,
+        segments: path.segments.toSpliced(found.index, 1, ...halves),
+      }));
+      return { paths, selection: pruneSelection(state.selection, paths) };
     }
 
     case 'segment/erase': {
@@ -315,7 +317,11 @@ export function docReducer(state: DocState, action: DocAction): DocState {
 
     case 'pen/join': {
       const target = findPath(state.paths, action.target.pathId);
-      if (!target) return state;
+      // The target is removed from the document before the bridge is attached,
+      // so joining a path to itself would drop it. The pen only ever offers an
+      // endpoint of another path, so this is defence rather than a live case.
+      if (!target || target.id === action.pathId) return state;
+
       const bridge: Segment = {
         id: action.id,
         p1: action.from,
@@ -326,13 +332,19 @@ export function docReducer(state: DocState, action: DocAction): DocState {
       };
       // The bridge lands on the target's head, so a tail hit needs a flip first.
       const adopted = action.target.end === 'tail' ? reversePath(target) : target;
-      const paths = state.paths
-        .filter((p) => p.id !== action.target.pathId)
-        .map((p) =>
-          p.id === action.pathId
-            ? { ...p, segments: [...p.segments, bridge, ...adopted.segments] }
-            : p
-        );
+      const joined = [bridge, ...adopted.segments];
+
+      const rest = state.paths.filter((p) => p.id !== action.target.pathId);
+      const source = findPath(rest, action.pathId);
+      // The pen mints a path id on its first click but commits nothing until
+      // the second, so a stroke's very first act can be to join an existing
+      // path — and that path is not in the document yet. Create it, the way
+      // `pen/commit` does, rather than dropping the gesture on the floor.
+      const paths = source
+        ? rest.map((p) =>
+            p.id === action.pathId ? { ...p, segments: [...p.segments, ...joined] } : p
+          )
+        : [...rest, { id: action.pathId, closed: false, segments: joined }];
       return { paths, selection: new Set([pointKey(bridge.id, 'p2')]) };
     }
 

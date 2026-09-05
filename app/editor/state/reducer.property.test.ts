@@ -336,20 +336,29 @@ describe('reversePath', () => {
     );
   });
 
-  it('keeps every junction flag except the one at the tail', () => {
-    // The flag lives on the *arriving* segment, and the last segment arrives at
-    // the free tail of an open path — there is no junction there to describe,
-    // so reversing normalises it to false. On a closed path that same slot is
-    // the seam, which is why a reversed loop comes back with a corner there.
+  it('is an involution on a loop', () => {
+    // Every anchor of a closed path is a junction, the seam included, so
+    // reversing has somewhere to put all of them and nothing is lost.
     fc.assert(
       fc.property(arbPaths, fc.nat(), (paths, n) => {
-        const path = paths[n % paths.length];
-        const back = reversePath(reversePath(path));
-        const flags = back.segments.map((s) => !!s.isSmoothP2);
-        const original = path.segments.map((s) => !!s.isSmoothP2);
-        expect(flags.slice(0, -1)).toEqual(original.slice(0, -1));
-        expect(flags.at(-1)).toBe(false);
-        // Which makes a second round trip a genuine no-op.
+        const loop = { ...paths[n % paths.length], closed: true };
+        expect(reversePath(reversePath(loop))).toEqual(loop);
+      })
+    );
+  });
+
+  it('normalises the free tail of an open chain, keeping every real junction', () => {
+    fc.assert(
+      fc.property(arbPaths, fc.nat(), (paths, n) => {
+        const chain = { ...paths[n % paths.length], closed: false };
+        const back = reversePath(reversePath(chain));
+        const flags = (segments: { isSmoothP2?: boolean }[]) =>
+          segments.map((s) => !!s.isSmoothP2);
+        expect(flags(back.segments).slice(0, -1)).toEqual(flags(chain.segments).slice(0, -1));
+        // The last segment of an open chain arrives at a free end, where there
+        // is no junction for the flag to describe. Reversing settles it to
+        // false, which is what makes the second round trip a no-op.
+        expect(flags(back.segments).at(-1)).toBe(false);
         expect(reversePath(reversePath(back))).toEqual(back);
       })
     );
@@ -377,6 +386,31 @@ describe('removeSegments', () => {
         // Breaking a chain always yields open chains — a loop with a hole in it
         // would render a phantom line across the gap.
         if (remove.size > 0) for (const p of out) expect(p.closed).toBe(false);
+      })
+    );
+  });
+
+  it('never joins two segments that were not already neighbours', () => {
+    // This is what makes it safe for the continuity property above to skip
+    // `path/join`: breaking a loop rotates the chain to start after the hole,
+    // so a `Z` seam can end up in the middle of the array — but the pairs that
+    // end up adjacent were always adjacent in the cycle, so no gap is invented.
+    // Only loops: an open path keeps its order outright, which the next spec
+    // states directly. The rotation is what needs this weaker statement.
+    fc.assert(
+      fc.property(arbPaths, fc.array(fc.nat(), { maxLength: 4 }), (paths, picks) => {
+        const loop = { ...paths[0], closed: true };
+        const ids = loop.segments.map((s) => s.id);
+        const remove = new Set(picks.map((n) => ids[n % ids.length]));
+        const out = removeSegments(loop, remove, pathIds(paths));
+
+        const neighbours = new Set(ids.slice(1).map((id, i) => `${ids[i]}>${id}`));
+        if (ids.length > 1) neighbours.add(`${ids[ids.length - 1]}>${ids[0]}`);
+        for (const p of out) {
+          p.segments.forEach((seg, i) => {
+            if (i > 0) expect(neighbours.has(`${p.segments[i - 1].id}>${seg.id}`)).toBe(true);
+          });
+        }
       })
     );
   });

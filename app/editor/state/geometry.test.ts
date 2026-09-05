@@ -120,6 +120,27 @@ describe('reversePath', () => {
     expect(reversePath(p).segments.map((s) => s.isSmoothP2)).toEqual([false, true, false]);
   });
 
+  it('carries the seam junction round a closed path', () => {
+    // Every anchor of a loop is a junction, including the one the seam arrives
+    // at — the flag there belongs to the last segment and has to survive.
+    const loop = path(
+      'P',
+      [
+        line('a', pt(0, 0), pt(10, 0), { isSmoothP2: false }),
+        line('b', pt(10, 0), pt(0, 0), { isSmoothP2: true }),
+      ],
+      true
+    );
+    expect(reversePath(loop).segments.map((s) => s.isSmoothP2)).toEqual([false, true]);
+    // Which makes reversing a loop reversible.
+    expect(reversePath(reversePath(loop))).toEqual(loop);
+  });
+
+  it('has no junction to keep at the free tail of an open chain', () => {
+    const chain = path('P', [line('a', pt(0, 0), pt(10, 0), { isSmoothP2: true })]);
+    expect(reversePath(chain).segments[0].isSmoothP2).toBe(false);
+  });
+
   it('swaps the control points so the curve keeps its shape', () => {
     const p = path('P', [curve('a', pt(0, 0), pt(2, 5), pt(8, 5), pt(10, 0))]);
     const [reversed] = reversePath(p).segments;

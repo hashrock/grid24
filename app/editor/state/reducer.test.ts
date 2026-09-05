@@ -517,6 +517,19 @@ describe('docReducer', () => {
       expect(left.p2).toEqual(pt(5, 0));
     });
 
+    it('drops a selection pointing at the segment it cut', () => {
+      // The two halves are new segments, so the id that was split retires with
+      // it and any key naming it addresses nothing.
+      const p = polyline('P', [pt(0, 0), pt(10, 0), pt(20, 0)]);
+      const next = docReducer(doc([p], ['P1::p1', 'P2::p1']), {
+        type: 'segment/split',
+        segmentId: 'P1',
+        t: 0.5,
+        ids: ['x', 'y'],
+      });
+      expect([...next.selection]).toEqual(['P2::p1']);
+    });
+
     it('is a no-op for an unknown segment', () => {
       const before = doc([polyline('P', [pt(0, 0), pt(10, 0)])]);
       expect(docReducer(before, { type: 'segment/split', segmentId: 'x', t: 0.5, ids: ['1', '2'] })).toBe(
@@ -645,6 +658,42 @@ describe('docReducer', () => {
           target: { pathId: 'nope', end: 'head', point: pt(9, 0) },
         })
       ).toBe(before);
+    });
+
+    it('join is a no-op when asked to bridge a path to itself', () => {
+      // The target is removed before the bridge is attached, so going through
+      // with it would drop the path entirely.
+      const before = doc([polyline('P', [pt(0, 0), pt(5, 0)])]);
+      expect(
+        docReducer(before, {
+          type: 'pen/join',
+          id: 'bridge',
+          pathId: 'P',
+          from: pt(5, 0),
+          control: pt(5, 0),
+          target: { pathId: 'P', end: 'head', point: pt(0, 0) },
+        })
+      ).toBe(before);
+    });
+
+    it('join starts the path being drawn when it has not been committed yet', () => {
+      // The pen mints its path id on the first click and commits nothing until
+      // the second, so a stroke whose second click lands on another path's end
+      // joins from a path the document has never seen.
+      const before = doc([polyline('P', [pt(0, 0), pt(5, 0)])]);
+      const next = docReducer(before, {
+        type: 'pen/join',
+        id: 'bridge',
+        pathId: 'fresh',
+        from: pt(9, 9),
+        control: pt(9, 9),
+        target: { pathId: 'P', end: 'head', point: pt(0, 0) },
+      });
+      expect(next.paths.map((p) => p.id)).toEqual(['fresh']);
+      expect(shape(next)).toEqual([['bridge', 'P1']]);
+      expect(byId(next, 'bridge').p1).toEqual(pt(9, 9));
+      expect(pathById(next, 'fresh').closed).toBe(false);
+      expect([...next.selection]).toEqual(['bridge::p2']);
     });
 
     it('dragHandle pulls a mirrored pair out of the anchor just placed', () => {

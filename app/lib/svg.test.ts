@@ -109,6 +109,30 @@ describe('parseContent', () => {
   });
 });
 
+describe('segment id collisions', () => {
+  const row = (id: string, pathId: string, x: number) => ({
+    id,
+    pathId,
+    p1: pt(x, 0),
+    c1: pt(x, 0),
+    c2: pt(x + 1, 0),
+    p2: pt(x + 1, 0),
+  });
+
+  it('renames a repeated id, leaving the one that got there first alone', () => {
+    // Two segments sharing an id would share every selection key and every
+    // lookup, so editing one would move the other.
+    const paths = parseContent(JSON.stringify([row('s', 'P', 0), row('s', 'P', 1), row('s', 'Q', 2)]));
+    expect(paths.map((p) => p.segments.map((seg) => seg.id))).toEqual([['s', 's#1'], ['s#2']]);
+  });
+
+  it('reloading renamed rows renames nothing further', () => {
+    const once = parseContent(JSON.stringify([row('s', 'P', 0), row('s', 'P', 1)]));
+    expect(parseContent(serializeContent(once))).toEqual(once);
+  });
+});
+
+
 describe('pathToD', () => {
   it('emits one M and a C per segment', () => {
     const p: Path = { id: 'P', closed: false, segments: [line('a', pt(0, 0), pt(10, 0))] };

@@ -1,3 +1,4 @@
+import { freshId } from '../../lib/uniqueId';
 import type { Path, Point, Segment } from '../types';
 import type { MirrorMode, NodeKey, NodeType } from './types';
 
@@ -105,11 +106,8 @@ export const outgoingAt = (paths: Path[], pt: Point): Segment | null => {
 };
 
 /** A path id not in `taken`, derived from `base` so it stays deterministic. */
-export const freshPathId = (taken: ReadonlySet<string>, base: string): string => {
-  let i = 1;
-  while (taken.has(`${base}/${i}`)) i++;
-  return `${base}/${i}`;
-};
+export const freshPathId = (taken: ReadonlySet<string>, base: string): string =>
+  freshId(taken, base, '/');
 
 export const pathIds = (paths: Path[]): Set<string> => new Set(paths.map((p) => p.id));
 
@@ -244,10 +242,18 @@ export const moveEndpoint = (path: Path, end: 'head' | 'tail', to: Point): Path 
  * Reverse a path's direction. Ids are preserved so callers can keep referring
  * to a segment across the flip. Junction smoothness travels with the junction:
  * the flag on reversed[j].p2 is the original flag at that same anchor.
+ *
+ * The last slot is the one that needs care. Reversed, it arrives at what used
+ * to be the first anchor — a junction only a closed path has, owned there by
+ * the segment that came round the seam. An open path has no junction at its
+ * free tail, so the flag has nothing to describe and normalises to false; that
+ * asymmetry is why reversing is an involution on loops but not quite one on
+ * open chains.
  */
 export const reversePath = (path: Path): Path => {
   const segs = path.segments;
   const n = segs.length;
+  const seamIsSmooth = path.closed && !!segs[n - 1]?.isSmoothP2;
   return {
     ...path,
     segments: segs.map((_, j) => {
@@ -258,7 +264,7 @@ export const reversePath = (path: Path): Path => {
         c1: o.c2,
         c2: o.c1,
         p2: o.p1,
-        isSmoothP2: j < n - 1 ? !!segs[n - 2 - j].isSmoothP2 : false,
+        isSmoothP2: j < n - 1 ? !!segs[n - 2 - j].isSmoothP2 : seamIsSmooth,
       };
     }),
   };

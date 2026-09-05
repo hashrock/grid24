@@ -36,11 +36,16 @@ export interface Path {
  * endpoints read. Predates the nested `Path` model, so it carries the grouping
  * as a `pathId` and repeats `isClosed` on every segment of a path.
  *
+ * Both grouping fields are optional because the column is old enough to hold
+ * rows written before they existed: a row without a `pathId` becomes a path of
+ * its own, and `closed` is false unless some row of the group says otherwise.
+ * `pathsToStored` always writes both — it is only *reading* that has to cope.
+ *
  * Only `app/lib/svg.ts` should ever touch this — everything else works with
  * `Path[]`.
  */
 export interface StoredSegment extends Segment {
-  pathId: string;
+  pathId?: string;
   isClosed?: boolean;
 }
 

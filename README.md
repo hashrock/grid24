@@ -25,6 +25,7 @@
 | `GET /icons/:id/edit` | エディタ（所有者のみ） |
 | `PUT /api/icons/:id` | 自動保存（name / content / isPublic） |
 | `GET /i/:id` | 個別公開ページ（公開 or 所有者のみ） |
+| `GET /__scenarios` | UI テスト用シナリオ一覧。`/__scenarios/:name` で初期状態を作って遷移（[docs/ui-test-scenarios.md](docs/ui-test-scenarios.md)） |
 
 アイコンの内容はフラットな `Segment[]` を JSON で `icons.content` に保存し、
 公開時は `app/lib/svg.ts` で SVG に変換して描画します。

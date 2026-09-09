@@ -1,14 +1,14 @@
 import { Hono } from "hono";
 import { inertia } from "@hono/inertia";
 import { googleAuth } from "@hono/oauth-providers/google";
-import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
+import { getCookie } from "hono/cookie";
+import { drizzle } from "drizzle-orm/d1";
 import { and, desc, eq } from "drizzle-orm";
 import { rootView } from "./root-view";
 import { users, icons } from "./db/schema";
+import { ensureUser, seedStarterIcons } from "./db/icons";
 import { getSession, setSession, clearSession } from "./utils/session";
-import { TABLER_ICONS } from "./lib/tablerIcons";
-import { parsePathDataList } from "./lib/pathImport";
-import { serializeContent } from "./lib/svg";
+import { SCENARIO_USER_COOKIE, findScenarioUser, scenariosRouter } from "./scenarios";
 import type { Env } from "./global.d";
 
 const DEV_USER = {
@@ -17,28 +17,6 @@ const DEV_USER = {
   name: "Dev User",
   avatarUrl: "",
 };
-
-/**
- * First-run seed: a few Tabler starter icons, inserted when a user opens their
- * (still empty) dashboard, so there's something to open and edit right away.
- * They start private, like any newly created icon.
- */
-const STARTER_ICON_COUNT = 3;
-
-async function seedStarterIcons(db: DrizzleD1Database, userId: string) {
-  const now = new Date().toISOString();
-  const rows = TABLER_ICONS.slice(0, STARTER_ICON_COUNT).map((icon) => ({
-    id: crypto.randomUUID(),
-    userId,
-    name: icon.name,
-    content: serializeContent(parsePathDataList(icon.paths)),
-    isPublic: false,
-    tablerSources: JSON.stringify([icon.name]),
-    createdAt: now,
-    updatedAt: now,
-  }));
-  if (rows.length > 0) await db.insert(icons).values(rows);
-}
 
 const app = new Hono<Env>();
 
@@ -64,19 +42,13 @@ app.use("*", async (c, next) => {
       return next();
     }
     const db = drizzle(c.env.DB);
-    const existing = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, DEV_USER.id))
-      .get();
-    if (!existing) {
-      await db.insert(users).values({
-        id: DEV_USER.id,
-        email: DEV_USER.email,
-        name: DEV_USER.name,
-        avatarUrl: DEV_USER.avatarUrl,
-      });
+    // A UI-test scenario may point the bypass at its own throwaway user.
+    const scenarioUser = await findScenarioUser(db, getCookie(c, SCENARIO_USER_COOKIE));
+    if (scenarioUser) {
+      c.set("user", scenarioUser);
+      return next();
     }
+    await ensureUser(db, DEV_USER);
     c.set("user", DEV_USER);
     return next();
   }
@@ -183,6 +155,9 @@ app.put("/api/icons/:id", async (c) => {
 
   return c.json({ ok: true });
 });
+
+// --- UI-test scenarios: seed an isolated initial state, then redirect ---
+app.route("/__scenarios", scenariosRouter);
 
 // --- Inertia pages ---
 const routes = app

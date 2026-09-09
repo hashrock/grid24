@@ -95,17 +95,20 @@ export default function IconsShow({
       <Head title={`${icon.name} — chibicon`} />
       <Nav user={user} />
 
-      <main className="mx-auto max-w-3xl px-6 py-10">
+      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
         <div className="anim-header mb-6 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">{icon.name}</h1>
+          <div className="min-w-0">
+            <h1 className="break-words text-2xl font-bold tracking-tight sm:text-3xl">{icon.name}</h1>
             <p className="mt-1 text-sm text-neutral-500">
               by {icon.authorName || "anonymous"}
               <span className="mx-2 text-neutral-700">·</span>
               <span className="font-mono">{icon.updatedAt.slice(0, 10)}</span>
               {!icon.isPublic && (
-                <span className="ml-2 rounded bg-neutral-800 px-2 py-0.5 text-xs text-neutral-400">
-                  非公開
+                <span
+                  className="ml-2 rounded bg-neutral-800 px-2 py-0.5 text-xs text-neutral-400"
+                  title="このページはあなたにしか見えません。公開するには編集画面の「公開する」を押してください。"
+                >
+                  非公開（自分にだけ表示中）
                 </span>
               )}
             </p>

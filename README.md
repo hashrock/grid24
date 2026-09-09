@@ -25,6 +25,7 @@
 | `GET /icons/:id/edit` | エディタ（所有者のみ） |
 | `PUT /api/icons/:id` | 自動保存（name / content / isPublic） |
 | `GET /i/:id` | 個別公開ページ（公開 or 所有者のみ） |
+| `GET /__scenarios` | UI テスト用シナリオ一覧。`/__scenarios/:name` で初期状態を作って遷移（[docs/ui-test-scenarios.md](docs/ui-test-scenarios.md)） |
 
 アイコンの内容はフラットな `Segment[]` を JSON で `icons.content` に保存し、
 公開時は `app/lib/svg.ts` で SVG に変換して描画します。
@@ -59,6 +60,12 @@ pnpm wrangler secret put GOOGLE_ID
 pnpm wrangler secret put GOOGLE_SECRET
 pnpm wrangler secret put SESSION_SECRET
 ```
+
+「誰としてログインしているか」は `app/auth/` の **AuthProvider**（`resolve / signIn / signOut`）に
+集約されています。本番は `sessionAuth`（上記セッション Cookie）、`DEV_BYPASS_AUTH` 時は `bypassAuth`、
+テストでは `createApp({ auth: fixedAuth(user) })` で固定ユーザを注入できます。
+OAuth コールバック・ログアウト・UI テスト用シナリオはすべて `auth.signIn / signOut` を呼ぶだけで、
+Cookie を直接扱うのはこのモジュールだけです。
 
 ローカル開発は `.dev.vars` に `DEV_BYPASS_AUTH=1` を置くと固定の `Dev User` で
 動作します（OAuth を通しません）。`?guest=1` でログアウト状態をプレビューでき、

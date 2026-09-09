@@ -13,7 +13,17 @@ describe("createApp({ auth })", () => {
   it("signed-out requests to the dashboard are sent to the landing page", async () => {
     const res = await createApp({ auth: fixedAuth(null) }).request("/icons", {}, {});
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/");
+    // With the reason, so the landing page can say "log in first" instead of
+    // silently showing the gallery.
+    expect(res.headers.get("location")).toBe("/?notice=login-required");
+  });
+
+  it("an unknown page gets a 404 with a way back, not bare text", async () => {
+    const res = await createApp({ auth: fixedAuth(null) }).request("/no-such-page", {}, {});
+    expect(res.status).toBe(404);
+    const html = await res.text();
+    expect(html).toContain("ページが見つかりません");
+    expect(html).toContain('href="/"');
   });
 
   it("signed-out autosave is rejected with 401", async () => {

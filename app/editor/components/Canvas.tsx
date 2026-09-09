@@ -860,10 +860,11 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
           ref={svgRef}
           viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
           className={`w-full h-full ${cursorClass} touch-none select-none bg-black`}
-          onMouseDown={handlePointerDown}
-          onMouseMove={handlePointerMove}
-          onMouseUp={handlePointerUp}
-          onMouseLeave={handlePointerUp}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onPointerLeave={handlePointerUp}
         >
           {renderGrid()}
           <rect x="0" y="0" width={gridSize} height={gridSize} fill="none" stroke="#404040" strokeWidth="0.1" />
@@ -1101,6 +1102,34 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
       >
         {zoomPercent}%
       </button>
+
+      {/* An empty grid gave no clue how to start; say so until the first stroke. */}
+      {paths.length === 0 && !penState && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
+          <div className="max-w-xs rounded-xl border border-neutral-800 bg-neutral-950/90 px-5 py-4 text-center text-xs leading-relaxed text-neutral-400 shadow-xl">
+            {tool === Tool.PEN ? (
+              <>
+                <p className="mb-1 text-sm font-medium text-white">キャンバスは空です</p>
+                <p>
+                  クリックして点を打つと線が引けます。<br />
+                  描き終わったら <kbd className="rounded border border-neutral-700 px-1 font-mono text-neutral-300">Esc</kbd> で確定。
+                </p>
+                <p className="mt-2 text-neutral-500">
+                  一から描かないなら、パネルの「検索して追加」で既存のアイコンを取り込めます。
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mb-1 text-sm font-medium text-white">まだ線がありません</p>
+                <p>
+                  描くにはツールの「ペン」を選んでください。<br />
+                  既存のアイコンを取り込むなら「検索して追加」。
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {tool === Tool.PEN && penState && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 text-neutral-500 text-xs bg-neutral-900 px-3 py-1 rounded-full border border-neutral-800 pointer-events-none select-none">

@@ -46,17 +46,27 @@ const readStoredRenderStyle = (): RenderStyle | null => {
   }
 };
 
+/**
+ * Which tool a document opens with. An empty canvas has nothing to select,
+ * so the pen is ready — the first click draws instead of doing nothing.
+ * Existing drawings open on node editing, where most icon work happens.
+ */
+export const initialToolFor = (paths: readonly Path[]): Tool =>
+  paths.length === 0 ? Tool.PEN : Tool.DIRECT;
+
 const App: FC<EditorProps> = ({ initialPaths = [], onChange, onTablerImport }) => {
   // Segments, selection and undo/redo all live in one reducer: every edit is an
   // action, and history is recorded by the reducer rather than by each caller.
   const [state, dispatch] = useReducer(editorReducer, initialPaths, createEditorState);
   const { paths, selection } = state.doc;
 
-  // Node editing is the default: this is a 24x24 icon editor, so most work is
-  // nudging anchors rather than moving whole shapes around.
-  const [tool, setTool] = useState<Tool>(Tool.DIRECT);
+  const [tool, setTool] = useState<Tool>(() => initialToolFor(initialPaths));
   // Tabler icons are designed on a 24x24 grid with a 2px stroke.
   const gridSize = 24;
+
+  // Narrow screens stack the panel under the canvas; it starts collapsed so
+  // the drawing gets the height, and opens on demand.
+  const [panelOpen, setPanelOpen] = useState(false);
 
   // Stroke rendering (width / cap / join) and the keyline guides. Both start
   // at their default so SSR and the first client render agree; the stored
@@ -90,9 +100,15 @@ const App: FC<EditorProps> = ({ initialPaths = [], onChange, onTablerImport }) =
   }, [paths]);
 
   return (
-    <div className="flex w-full h-full bg-black overflow-hidden">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-black md:flex-row">
+      {/* Phones: the desktop layout gave the canvas a 70px sliver. Say so once,
+          up front, rather than letting people discover it by failing. */}
+      <p className="border-b border-neutral-900 bg-neutral-950 px-3 py-1.5 text-[11px] text-neutral-500 md:hidden">
+        画面幅が狭いため簡易表示です。細かい編集は PC をおすすめします。
+      </p>
+
       {/* Main Canvas Area */}
-      <div className="flex-1 h-full relative">
+      <div className="relative min-h-0 flex-1">
         <Canvas
           paths={paths}
           selection={selection}
@@ -104,11 +120,29 @@ const App: FC<EditorProps> = ({ initialPaths = [], onChange, onTablerImport }) =
         />
       </div>
 
-      {/* Sidebar */}
-      <div className="z-10 h-full">
+      {/* Sidebar: a fixed column on wide screens, a collapsible drawer below
+          the canvas on narrow ones. */}
+      <button
+        type="button"
+        onClick={() => setPanelOpen((v) => !v)}
+        aria-expanded={panelOpen}
+        className="flex items-center justify-between border-t border-neutral-800 bg-neutral-950 px-4 py-2 text-xs text-neutral-300 md:hidden"
+      >
+        <span>ツールと設定</span>
+        <span aria-hidden>{panelOpen ? '▼ 閉じる' : '▲ 開く'}</span>
+      </button>
+      <div
+        className={`z-10 min-h-0 shrink-0 overflow-hidden md:block md:h-full ${
+          panelOpen ? 'block max-h-[55dvh]' : 'hidden'
+        } md:max-h-none`}
+      >
         <Toolbar
           currentTool={tool}
-          setTool={setTool}
+          setTool={(t) => {
+            setTool(t);
+            // Picking a tool on a phone is a reason to get back to the canvas.
+            setPanelOpen(false);
+          }}
           paths={paths}
           selection={selection}
           dispatch={dispatch}

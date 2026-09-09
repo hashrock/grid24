@@ -26,24 +26,106 @@ export function loadTablerIcons(): Promise<TablerIconEntry[]> {
 }
 
 /**
+ * Japanese → Tabler search terms. The dataset is English-only, so a user
+ * typing 「猫」 got nothing. This is deliberately small: everyday nouns the
+ * persona test showed people reach for first, not a dictionary.
+ */
+export const JA_ALIASES: Record<string, string[]> = {
+  猫: ["cat"], ねこ: ["cat"], ネコ: ["cat"],
+  犬: ["dog"], いぬ: ["dog"], イヌ: ["dog"],
+  家: ["home", "house"], いえ: ["home"], ホーム: ["home"],
+  矢印: ["arrow"], やじるし: ["arrow"],
+  星: ["star"], ほし: ["star"],
+  ハート: ["heart"], 心: ["heart"], 好き: ["heart"],
+  検索: ["search"], 探す: ["search"], 虫眼鏡: ["search"],
+  設定: ["settings", "adjustments"], 歯車: ["settings"],
+  人: ["user"], ユーザー: ["user"], ユーザ: ["user"], 人物: ["user"],
+  メール: ["mail"], 手紙: ["mail"], 封筒: ["mail"],
+  電話: ["phone"], でんわ: ["phone"],
+  カレンダー: ["calendar"], 予定: ["calendar"], 日付: ["calendar"],
+  時計: ["clock"], 時間: ["clock"],
+  ゴミ箱: ["trash"], 削除: ["trash"], 消す: ["trash"],
+  写真: ["photo"], 画像: ["photo"], カメラ: ["camera"],
+  音楽: ["music"], 音: ["volume"], 動画: ["video"], 再生: ["player-play"],
+  車: ["car"], 自転車: ["bike"], 電車: ["train"], 飛行機: ["plane"],
+  鍵: ["key", "lock"], ロック: ["lock"], 錠: ["lock"],
+  地図: ["map"], 場所: ["map-pin"], 位置: ["map-pin"], ピン: ["pin"],
+  買い物: ["shopping"], カート: ["shopping-cart"], お金: ["coin", "cash"], 円: ["circle"],
+  本: ["book"], 文書: ["file"], ファイル: ["file"], 書類: ["file"], フォルダ: ["folder"],
+  ダウンロード: ["download"], アップロード: ["upload"], 保存: ["device-floppy"],
+  追加: ["plus"], プラス: ["plus"], 閉じる: ["x"], バツ: ["x"], チェック: ["check"], 完了: ["check"],
+  警告: ["alert"], 注意: ["alert"], 情報: ["info"], 質問: ["question", "help"], ヘルプ: ["help"],
+  天気: ["cloud", "sun"], 雲: ["cloud"], 太陽: ["sun"], 月: ["moon"], 雨: ["cloud-rain"], 雪: ["snowflake"],
+  木: ["tree"], 花: ["flower"], 葉: ["leaf"],
+  電気: ["bolt"], 雷: ["bolt"], 電球: ["bulb"],
+  編集: ["edit", "pencil"], 鉛筆: ["pencil"], ペン: ["pen"],
+  印刷: ["printer"], 共有: ["share"], リンク: ["link"], 通知: ["bell"], ベル: ["bell"], 旗: ["flag"],
+  世界: ["world"], 地球: ["world"], 言語: ["language"],
+  四角: ["square"], 三角: ["triangle"], 丸: ["circle"],
+  メニュー: ["menu"], 一覧: ["list"], リスト: ["list"], グラフ: ["chart"], 表: ["table"],
+  メッセージ: ["message"], チャット: ["message"], コメント: ["message"],
+  コーヒー: ["coffee"], 食べ物: ["tools-kitchen"], 料理: ["tools-kitchen"], ビール: ["beer"],
+  笑顔: ["mood-smile"], 顔: ["mood"], 目: ["eye"], 手: ["hand"],
+  パソコン: ["device-laptop", "device-desktop"], スマホ: ["device-mobile"], 携帯: ["device-mobile"],
+  プレゼント: ["gift"], 贈り物: ["gift"], 誕生日: ["cake"], ケーキ: ["cake"],
+  会社: ["building"], 建物: ["building"], 学校: ["school"], 病院: ["building-hospital"],
+  トイレ: ["toilet-paper"], 荷物: ["package"], 箱: ["box"], 袋: ["shopping-bag"],
+  ドア: ["door"], 窓: ["window"], 時: ["clock"],
+};
+
+/** True when the query has characters outside plain ASCII (e.g. Japanese). */
+export function isNonAscii(query: string): boolean {
+  return /[^\x00-\x7f]/.test(query);
+}
+
+/**
+ * The terms actually matched against the dataset for `query`: the query
+ * itself plus any Japanese aliases. Each term is lower-cased and trimmed.
+ */
+export function expandQuery(query: string): string[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const terms = new Set<string>([q]);
+  for (const alias of JA_ALIASES[query.trim()] ?? []) terms.add(alias);
+  // Also match aliases that appear inside a longer Japanese query (「猫の顔」).
+  for (const [ja, en] of Object.entries(JA_ALIASES)) {
+    if (query.includes(ja)) for (const t of en) terms.add(t);
+  }
+  return [...terms];
+}
+
+/**
+ * What to tell the user when a search found nothing. Japanese input that
+ * matched no alias gets the one hint that actually helps: the names are
+ * English.
+ */
+export function noResultsHint(query: string): string {
+  if (isNonAscii(query)) {
+    return `「${query}」に一致するアイコンがありません。アイコン名は英語です — cat, home, arrow のように英語で入力してください。`;
+  }
+  return `「${query}」に一致するアイコンがありません`;
+}
+
+/**
  * Filter icons by a free-text query against name + tags. Empty query returns
  * the head of the list. Name matches rank above tag-only matches; results are
  * capped so rendering thousands of previews never stalls the dialog.
+ * Japanese queries are expanded through `JA_ALIASES`.
  */
 export function searchTablerIcons(
   icons: TablerIconEntry[],
   query: string,
   limit = 200
 ): TablerIconEntry[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return icons.slice(0, limit);
+  const terms = expandQuery(query);
+  if (terms.length === 0) return icons.slice(0, limit);
 
   const nameHits: TablerIconEntry[] = [];
   const tagHits: TablerIconEntry[] = [];
   for (const icon of icons) {
-    if (icon.n.includes(q)) {
+    if (terms.some((q) => icon.n.includes(q))) {
       nameHits.push(icon);
-    } else if (icon.t.some((tag) => tag.toLowerCase().includes(q))) {
+    } else if (terms.some((q) => icon.t.some((tag) => tag.toLowerCase().includes(q)))) {
       tagHits.push(icon);
     }
     if (nameHits.length >= limit) break;

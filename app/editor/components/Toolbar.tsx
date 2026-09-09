@@ -85,7 +85,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
     onPick: (v: string) => void;
   }) => (
     <div className="flex flex-col gap-1">
-      <label className="text-[10px] font-bold uppercase text-neutral-600">{label}</label>
+      <label className="text-[10px] font-bold text-neutral-600">{label}</label>
       <div className="flex gap-1">
         {options.map(opt => (
           <button
@@ -107,7 +107,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
   const ToolButton = ({ tool, label, hint, icon }: { tool: Tool, label: string, hint: string, icon: ReactNode }) => (
     <button
       onClick={() => setTool(tool)}
-      className={`p-3 rounded-lg flex flex-col items-center gap-1 transition-all border ${
+      className={`p-2 md:p-3 rounded-lg flex flex-col items-center gap-1 transition-all border ${
         currentTool === tool
           ? 'bg-neutral-900 border-white text-white'
           : 'bg-black border-transparent text-neutral-500 hover:text-white hover:border-neutral-800'
@@ -115,47 +115,47 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
       title={hint}
     >
       {icon}
-      <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+      <span className="text-[10px] font-bold tracking-wider">{label}</span>
     </button>
   );
 
   return (
-    <div className="w-80 h-full bg-black border-l border-neutral-900 flex flex-col p-6 gap-8 overflow-y-auto">
-      <div>
+    <div className="flex h-full w-full flex-col gap-5 overflow-y-auto bg-black p-4 md:w-80 md:gap-8 md:border-l md:border-neutral-900 md:p-6">
+      <div className="hidden md:block">
         <h1 className="text-2xl font-bold font-mono text-white mb-2">chibi<span className="text-neutral-600">con</span></h1>
         <p className="text-xs text-neutral-500">monoline icons on a 24 × 24 grid</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-5 gap-2 md:grid-cols-2 md:gap-3">
         {/* Direct vs object selection follow the vector-editor convention:
             a hollow arrow edits anchors, a solid one moves whole shapes. */}
         <ToolButton
           tool={Tool.DIRECT}
-          label="Node"
+          label="頂点"
           hint="頂点選択 — アンカーとハンドルを編集"
           icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3l6.5 15.5 2.3-6.7 6.7-2.3L6 3z"/><rect x="2" y="17" width="4" height="4"/></svg>}
         />
         <ToolButton
           tool={Tool.SELECT}
-          label="Select"
+          label="選択"
           hint="図形選択 — パス全体を移動・変形"
           icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>}
         />
         <ToolButton
           tool={Tool.PEN}
-          label="Pen"
+          label="ペン"
           hint="ペン — パスを描く"
           icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>}
         />
         <ToolButton
           tool={Tool.SPLIT}
-          label="Split"
+          label="分割"
           hint="分割 — セグメントの途中にアンカーを追加"
           icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>}
         />
         <ToolButton
             tool={Tool.ERASER}
-            label="Erase"
+            label="消去"
             hint="消去 — セグメントを削除"
             icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>}
         />
@@ -170,22 +170,22 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
         className="flex items-center justify-between w-full py-2 px-3 bg-black border border-neutral-800 rounded hover:border-white transition-colors"
         title="キーラインガイド — 20×20 のライブエリアと基準図形を表示"
       >
-        <span className="text-xs text-white">Keyline Guides</span>
+        <span className="text-xs text-white">ガイド線を表示</span>
         <div className={`w-3 h-3 rounded-sm border border-neutral-500 ${showGuides ? 'bg-cyan-500 border-cyan-500' : 'bg-black'}`} />
       </button>
 
       {hasSelection && (
           <div className="flex flex-col gap-2 p-3 bg-neutral-900 rounded border border-neutral-800">
-             <h3 className="text-xs font-bold text-neutral-400 uppercase">Selection</h3>
+             <h3 className="text-xs font-bold text-neutral-400">選択中の点</h3>
 
              {/* Node Options */}
              <div className="flex flex-col gap-1">
-                 <label className="text-[10px] text-neutral-600 font-bold uppercase">Node Type</label>
+                 <label className="text-[10px] text-neutral-600 font-bold">点の種類</label>
                  <button
                     onClick={() => dispatch({ type: 'anchor/toggleSmooth' })}
                     className="flex items-center justify-between w-full py-2 px-3 bg-black border border-neutral-700 rounded hover:border-white transition-colors"
                  >
-                     <span className="text-xs text-white">{isSmooth ? "Smooth" : "Corner"}</span>
+                     <span className="text-xs text-white">{isSmooth ? "なめらか (Smooth)" : "角 (Corner)"}</span>
                      <div className={`w-3 h-3 rounded-full border border-neutral-500 ${isSmooth ? "bg-white" : "bg-black"}`} />
                  </button>
              </div>
@@ -193,7 +193,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
              {/* Join — welds two free endpoints into one anchor. */}
              {joinable && (
                <div className="flex flex-col gap-1 mt-2">
-                 <label className="text-[10px] text-neutral-600 font-bold uppercase">Join</label>
+                 <label className="text-[10px] text-neutral-600 font-bold">連結</label>
                  <button
                     onClick={() => dispatch({
                       type: 'path/join',
@@ -213,12 +213,12 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
 
              {/* Path Options */}
              <div className="flex flex-col gap-1 mt-2">
-                 <label className="text-[10px] text-neutral-600 font-bold uppercase">Path Type</label>
+                 <label className="text-[10px] text-neutral-600 font-bold">線の種類</label>
                  <button
                     onClick={() => dispatch({ type: 'path/toggleClosed' })}
                     className="flex items-center justify-between w-full py-2 px-3 bg-black border border-neutral-700 rounded hover:border-white transition-colors"
                  >
-                     <span className="text-xs text-white">{isClosed ? "Closed" : "Open"}</span>
+                     <span className="text-xs text-white">{isClosed ? "閉じた図形 (Closed)" : "開いた線 (Open)"}</span>
                      <div className={`w-3 h-3 border border-neutral-500 ${isClosed ? "bg-white" : "bg-black"}`} />
                  </button>
              </div>
@@ -229,13 +229,13 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
       {/* Stroke rendering — preview only, never changes the saved geometry. */}
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-neutral-400">Stroke</h3>
+          <h3 className="text-sm font-semibold text-neutral-400">線の見た目（プレビュー）</h3>
           <button
             onClick={() => setRenderStyle(DEFAULT_RENDER_STYLE)}
             className="text-[10px] font-bold uppercase text-neutral-600 hover:text-white"
             title="既定 (2 / round / round) に戻す"
           >
-            Reset
+            初期値に戻す
           </button>
         </div>
 
@@ -256,7 +256,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
 
         <div className="flex flex-col gap-1">
           <div className="flex items-center justify-between">
-            <label className="text-[10px] font-bold uppercase text-neutral-600">Width</label>
+            <label className="text-[10px] font-bold text-neutral-600">太さ</label>
             <span className="font-mono text-xs text-white">{renderStyle.strokeWidth.toFixed(2)}</span>
           </div>
           <input
@@ -271,13 +271,13 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
         </div>
 
         <OptionRow
-          label="Cap"
+          label="端の形"
           options={CAPS}
           value={renderStyle.strokeLinecap}
           onPick={(v) => setRenderStyle(prev => ({ ...prev, strokeLinecap: v as RenderStyle['strokeLinecap'] }))}
         />
         <OptionRow
-          label="Join (corner)"
+          label="角の形"
           options={JOINS}
           value={renderStyle.strokeLinejoin}
           onPick={(v) => setRenderStyle(prev => ({ ...prev, strokeLinejoin: v as RenderStyle['strokeLinejoin'] }))}
@@ -285,7 +285,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
       </div>
 
       <div className="flex flex-col gap-2">
-        <h3 className="text-sm font-semibold text-neutral-400">Tabler Icons</h3>
+        <h3 className="text-sm font-semibold text-neutral-400">既存のアイコンから作る</h3>
         <button
           onClick={() => setTablerOpen(true)}
           className="flex items-center justify-center gap-2 w-full py-2 px-4 rounded-md border border-neutral-800 text-sm text-neutral-300 hover:border-white hover:text-white transition-colors"
@@ -293,7 +293,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3 -4.3" /></svg>
           検索して追加
         </button>
-        <p className="text-[10px] text-neutral-600">選んだアイコンを今のキャンバスに追加します。</p>
+        <p className="text-[10px] text-neutral-600">Tabler Icons（5,000 種・英語名）から選んで取り込みます。</p>
       </div>
 
       {AI_GENERATION_ENABLED && (
@@ -324,10 +324,14 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
 
       <div className="mt-auto flex flex-col gap-2">
          <button
-            onClick={() => dispatch({ type: 'paths/replace', paths: [] })}
+            onClick={() => {
+              if (paths.length === 0) return;
+              if (!window.confirm('キャンバスの線をすべて消します。よろしいですか？（Cmd+Z で戻せます）')) return;
+              dispatch({ type: 'paths/replace', paths: [] });
+            }}
             className="w-full py-2 border border-neutral-800 rounded text-xs text-neutral-500 hover:text-white hover:border-white transition-colors"
          >
-            Clear Canvas
+            全部消す
          </button>
       </div>
 
@@ -338,8 +342,13 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
       <TablerImportDialog
         open={tablerOpen}
         onClose={() => setTablerOpen(false)}
-        onPick={(picked, name) => {
-          dispatch({ type: 'paths/append', paths: picked });
+        hasContent={paths.length > 0}
+        onPick={(picked, name, mode) => {
+          dispatch(
+            mode === 'replace'
+              ? { type: 'paths/replace', paths: picked }
+              : { type: 'paths/append', paths: picked }
+          );
           onTablerImport?.(name);
         }}
       />

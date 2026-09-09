@@ -36,21 +36,60 @@ export function combinedTablerContent(list: readonly TablerIcon[]): string {
   return serializeContent(parsePathDataList(list.flatMap((i) => i.paths)));
 }
 
-/** Insert rows for the starter set. Pure: the caller decides when to insert. */
+/** What it takes to make an icon; everything else has a default. */
+export type IconInput = {
+  userId: string;
+  name?: string;
+  /** Stored JSON `Segment[]`; defaults to an empty document. */
+  content?: string;
+  isPublic?: boolean;
+  /** Tabler icon names the strokes came from (see `icons.tablerSources`). */
+  tablerSources?: string[];
+  /** Injected id / clock, so callers that need determinism can have it. */
+  id?: string;
+  now?: string;
+};
+
+/**
+ * The one place the shape of a new icon row is defined. Both the app's
+ * "create" route and any seeding go through it, so a new column or default
+ * is added here and nowhere else.
+ */
+export function newIconRow(input: IconInput): NewIcon {
+  const now = input.now ?? new Date().toISOString();
+  return {
+    id: input.id ?? crypto.randomUUID(),
+    userId: input.userId,
+    name: input.name || "Untitled",
+    content: input.content ?? "[]",
+    isPublic: input.isPublic ?? false,
+    tablerSources: input.tablerSources ? JSON.stringify(input.tablerSources) : null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** Insert one icon and hand back the row (its id is what routes redirect to). */
+export async function createIcon(db: DrizzleD1Database, input: IconInput): Promise<NewIcon> {
+  const row = newIconRow(input);
+  await db.insert(icons).values(row);
+  return row;
+}
+
+/** Rows for the starter set. Pure: the caller decides when to insert. */
 export function starterIconRows(
   userId: string,
   now = new Date().toISOString()
 ): NewIcon[] {
-  return TABLER_ICONS.slice(0, STARTER_ICON_COUNT).map((icon) => ({
-    id: crypto.randomUUID(),
-    userId,
-    name: icon.name,
-    content: tablerContent(icon),
-    isPublic: false,
-    tablerSources: JSON.stringify([icon.name]),
-    createdAt: now,
-    updatedAt: now,
-  }));
+  return TABLER_ICONS.slice(0, STARTER_ICON_COUNT).map((icon) =>
+    newIconRow({
+      userId,
+      name: icon.name,
+      content: tablerContent(icon),
+      tablerSources: [icon.name],
+      now,
+    })
+  );
 }
 
 export async function insertIcons(db: DrizzleD1Database, rows: NewIcon[]) {

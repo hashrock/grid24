@@ -1,4 +1,4 @@
-import type { NewIcon } from "../db/icons";
+import { newIconRow, type NewIcon } from "../db/icons";
 import type { BuildContext } from "./types";
 
 /** Short random suffix so repeated runs never collide by name. */
@@ -27,17 +27,14 @@ type IconSpec = {
 
 /** A row for the scenario's user, with the tag prefixed to the display name. */
 export function iconRow(ctx: BuildContext, spec: IconSpec): NewIcon {
-  const at = minutesAgo(ctx.now, spec.ageMinutes ?? 0);
-  return {
-    id: crypto.randomUUID(),
+  return newIconRow({
     userId: ctx.userId,
     name: `${ctx.tag} ${spec.name}`,
     content: spec.content,
-    isPublic: spec.isPublic ?? false,
-    tablerSources: spec.tablerSources ? JSON.stringify(spec.tablerSources) : null,
-    createdAt: at,
-    updatedAt: at,
-  };
+    isPublic: spec.isPublic,
+    tablerSources: spec.tablerSources,
+    now: minutesAgo(ctx.now, spec.ageMinutes ?? 0),
+  });
 }
 
 export const editUrl = (id: string) => `/icons/${id}/edit`;

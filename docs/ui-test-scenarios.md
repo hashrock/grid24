@@ -24,13 +24,16 @@ Chrome MCP などでブラウザ自動テストをするとき、**URL を開く
 ## 安全性（本番でも公開してよい理由）
 
 - 既存データは消さない・書き換えない。毎回新しい ID の行だけを追加し、アイコン名には
-  `scenario-<name>-<6 桁ランダム>` のタグを付ける。
-- 認証は迂回しない。
-  - **`DEV_BYPASS_AUTH` が有効なとき**（ローカル開発）: シナリオごとに使い捨てユーザ
-    `scenario-<name>-<random>` を作り、`dev_user` Cookie で既存の dev バイパスをそのユーザに向ける。
-    `dev_user` は `scenario-` で始まり DB に存在する id しか受け付けず、バイパスが無効なら完全に無視される。
-    `public-icon` は既存の `dev_guest=1` Cookie でログアウト状態にする。
-  - **バイパスが無効なとき**（本番）: ログイン中のユーザ自身のアカウントに隔離データを追加するだけ。
+  `scenario-<name>-<6 桁ランダム>` のタグを付ける。行の形は `app/db/icons.ts` の `newIconRow` に
+  一本化されていて、本体の `POST /icons` もシナリオも同じ関数を通る。
+- 認証は迂回しない。ログインは `app/auth/` の **AuthProvider**（`resolve / signIn / signOut`）を通してだけ行う。
+  シナリオ route は `auth.signIn(c, user)` / `auth.signOut(c)` を呼ぶだけで、Cookie やミドルウェアには触れない。
+  - **`DEV_BYPASS_AUTH` が有効なとき**（ローカル開発）は `bypassAuth` が選ばれる。シナリオごとに使い捨てユーザ
+    `scenario-<name>-<random>` を作って `signIn` する。`bypassAuth` はそれを署名付き Cookie `dev_impersonate`
+    に書き、以後のリクエストをそのユーザとして解決する（署名が合わなければ従来の Dev User に戻る）。
+    `public-icon` は `signOut` でログアウト状態（既存の `dev_guest=1`）にする。
+  - **バイパスが無効なとき**（本番）は `sessionAuth` が選ばれ、`dev_impersonate` / `dev_guest` は一切読まれない
+    （`app/auth/auth.test.ts` で固定）。シナリオはログイン中のユーザ自身のアカウントに隔離データを追加するだけ。
     未ログインなら 303 で一覧に戻り理由を表示（JSON は 401 と `loginUrl`）。
     新規ユーザが必要な `empty` は実行不可として一覧に表示（JSON は 409）。
     `public-icon` は所有者として表示される（JSON の `viewer` が `"user"`）。
@@ -54,8 +57,9 @@ GET /__scenarios/editor-complex?format=json
 }
 ```
 
-3. 別のシナリオを開くと Cookie が差し替わり、そのシナリオのユーザに切り替わる。
-   通常の Dev User に戻すには `dev_user` Cookie を消す（`/auth/logout` → `/auth/google` でも可）。
+3. 別のシナリオを開くと impersonate Cookie が差し替わり、そのシナリオのユーザに切り替わる。
+   通常の Dev User に戻すには `/auth/google` を開く（バイパス時は Dev User として `signIn` するだけ）。
+   `/auth/logout` でログアウト状態になる。
 
 ## curl での確認
 
@@ -69,3 +73,8 @@ curl -s http://localhost:5173/__scenarios/large?format=json | jq .icons[0]
 `app/scenarios/<name>.ts` に `Scenario` を 1 つ export し、`app/scenarios/index.ts` の `SCENARIOS` に並べる。
 `build()` は純関数（ランダム値と時刻は `BuildContext` で受け取る）にしておくと、
 `app/scenarios/scenarios.test.ts` の共通テストがそのまま効きます。
+
+## ハンドラを DB なしでテストする
+
+`createApp({ auth })` に `fixedAuth(user)` を渡すと、Cookie も OAuth も DB も無しに「このユーザでログイン中」の
+リクエストを組み立てられる（`app/server.test.ts` 参照）。

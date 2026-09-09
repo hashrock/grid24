@@ -61,6 +61,12 @@ pnpm wrangler secret put GOOGLE_SECRET
 pnpm wrangler secret put SESSION_SECRET
 ```
 
+「誰としてログインしているか」は `app/auth/` の **AuthProvider**（`resolve / signIn / signOut`）に
+集約されています。本番は `sessionAuth`（上記セッション Cookie）、`DEV_BYPASS_AUTH` 時は `bypassAuth`、
+テストでは `createApp({ auth: fixedAuth(user) })` で固定ユーザを注入できます。
+OAuth コールバック・ログアウト・UI テスト用シナリオはすべて `auth.signIn / signOut` を呼ぶだけで、
+Cookie を直接扱うのはこのモジュールだけです。
+
 ローカル開発は `.dev.vars` に `DEV_BYPASS_AUTH=1` を置くと固定の `Dev User` で
 動作します（OAuth を通しません）。`?guest=1` でログアウト状態をプレビューでき、
 ローカルで実際の OAuth を試したい場合は `DEV_BYPASS_AUTH` を外して

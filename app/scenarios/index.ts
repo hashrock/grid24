@@ -1,14 +1,9 @@
 import { Hono } from "hono";
-import { getCookie } from "hono/cookie";
 import { drizzle } from "drizzle-orm/d1";
 import type { Env } from "../global.d";
+import type { AuthProvider } from "../auth/provider";
 import { ensureUser, insertIcons } from "../db/icons";
-import {
-  SCENARIO_USER_COOKIE,
-  availability,
-  scenarioUserRow,
-  type AuthState,
-} from "./auth";
+import { availability, scenarioUser, type AuthState } from "./access";
 import { editUrl, scenarioTag, showUrl } from "./helpers";
 import type { BuildContext, Scenario, ScenarioPlan } from "./types";
 import { empty } from "./empty";
@@ -17,8 +12,6 @@ import { large } from "./large";
 import { editorBlank } from "./editor-blank";
 import { editorComplex } from "./editor-complex";
 import { publicIcon } from "./public-icon";
-
-export { SCENARIO_USER_COOKIE, findScenarioUser } from "./auth";
 
 export const SCENARIOS: readonly Scenario[] = [
   empty,
@@ -92,11 +85,16 @@ ${error ? `<div class="error">${escapeHtml(error)}</div>` : ""}
 </body></html>`;
 }
 
-/** Hono sub-app; mount at `/__scenarios` after the auth middleware. */
-export const scenariosRouter = new Hono<Env>()
+/**
+ * Hono sub-app; mount at `/__scenarios` after the auth middleware. Signing
+ * the browser in as the scenario's user goes through the app's AuthProvider,
+ * so this module owns no cookie of its own.
+ */
+export const scenariosRouter = (auth: AuthProvider) =>
+  new Hono<Env>()
   .get("/", (c) => {
-    const auth: AuthState = { bypass: !!c.env.DEV_BYPASS_AUTH, user: c.get("user") };
-    return c.html(listPage(auth, c.req.query("error")));
+    const state: AuthState = { bypass: !!c.env.DEV_BYPASS_AUTH, user: c.get("user") };
+    return c.html(listPage(state, c.req.query("error")));
   })
   .get("/:name", async (c) => {
     const json = wantsJson(c.req.header("Accept"), c.req.query("format"));
@@ -105,8 +103,8 @@ export const scenariosRouter = new Hono<Env>()
       return json ? c.json({ error: "Unknown scenario" }, 404) : c.notFound();
     }
 
-    const auth: AuthState = { bypass: !!c.env.DEV_BYPASS_AUTH, user: c.get("user") };
-    const avail = availability(scenario, auth);
+    const state: AuthState = { bypass: !!c.env.DEV_BYPASS_AUTH, user: c.get("user") };
+    const avail = availability(scenario, state);
     if (!avail.ok) {
       if (json) return c.json({ error: avail.reason, loginUrl: avail.loginUrl }, avail.loginUrl ? 401 : 409);
       return c.redirect(`/__scenarios?error=${encodeURIComponent(`${scenario.name}: ${avail.reason}`)}`, 303);
@@ -116,8 +114,9 @@ export const scenariosRouter = new Hono<Env>()
     const tag = scenarioTag(scenario.name);
     let userId: string;
     if (avail.mode === "scenario-user") {
-      await ensureUser(db, scenarioUserRow(tag));
-      userId = tag;
+      const user = scenarioUser(tag);
+      await ensureUser(db, user);
+      userId = user.id;
     } else {
       userId = avail.userId;
     }
@@ -125,18 +124,14 @@ export const scenariosRouter = new Hono<Env>()
     const plan = buildScenario(scenario, { userId, tag, now: new Date().toISOString() });
     await insertIcons(db, plan.icons);
 
-    // Sign-in for the target page. Only the dev bypass is steered here: which
-    // dev user it impersonates, or guest mode via the bypass's own cookie.
+    // Sign the browser in for the target page: as the throwaway user, or out
+    // altogether when the page is meant to be seen as a visitor. Only the
+    // throwaway case is steered; a real signed-in account is left as it is.
     const viewer: ScenarioResult["viewer"] =
       avail.mode === "scenario-user" && scenario.viewAsGuest ? "guest" : "user";
     if (avail.mode === "scenario-user") {
-      if (viewer === "guest") {
-        c.header("Set-Cookie", "dev_guest=1; Path=/; SameSite=Lax", { append: true });
-        c.header("Set-Cookie", `${SCENARIO_USER_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`, { append: true });
-      } else {
-        c.header("Set-Cookie", "dev_guest=; Path=/; Max-Age=0; SameSite=Lax", { append: true });
-        c.header("Set-Cookie", `${SCENARIO_USER_COOKIE}=${tag}; Path=/; SameSite=Lax`, { append: true });
-      }
+      if (viewer === "guest") await auth.signOut(c);
+      else await auth.signIn(c, scenarioUser(tag));
     }
 
     if (json) {

@@ -4,7 +4,7 @@ import type { SessionUser } from "../user";
 
 const SESSION_COOKIE = "session";
 
-async function sign(payload: string, secret: string): Promise<string> {
+export async function sign(payload: string, secret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -21,7 +21,7 @@ async function sign(payload: string, secret: string): Promise<string> {
   return `${payload}.${sigB64}`;
 }
 
-async function verify(token: string, secret: string): Promise<string | null> {
+export async function verify(token: string, secret: string): Promise<string | null> {
   const lastDot = token.lastIndexOf(".");
   if (lastDot === -1) return null;
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SCENARIOS, buildScenario, findScenario } from "./index";
-import { availability, scenarioUserIdFromCookie, scenarioUserRow } from "./auth";
+import { availability, scenarioUser } from "./access";
 import { scenarioTag } from "./helpers";
 import { LARGE_ICON_COUNT } from "./large";
 import { parseContent } from "../lib/svg";
@@ -132,17 +132,11 @@ describe("availability", () => {
   });
 });
 
-describe("dev_user cookie", () => {
-  it("accepts only scenario-prefixed ids", () => {
-    expect(scenarioUserIdFromCookie("scenario-typical-abc123")).toBe("scenario-typical-abc123");
-    expect(scenarioUserIdFromCookie("dev-user")).toBeNull();
-    expect(scenarioUserIdFromCookie("scenario-x; evil")).toBeNull();
-    expect(scenarioUserIdFromCookie(undefined)).toBeNull();
-  });
-
-  it("scenarioUserRow derives a unique email from the tag", () => {
-    const row = scenarioUserRow("scenario-typical-abc123");
-    expect(row.id).toBe("scenario-typical-abc123");
-    expect(row.email).toBe("scenario-typical-abc123@scenario.invalid");
+describe("scenarioUser", () => {
+  it("derives a unique id and email from the tag", () => {
+    const user = scenarioUser("scenario-typical-abc123");
+    expect(user.id).toBe("scenario-typical-abc123");
+    expect(user.email).toBe("scenario-typical-abc123@scenario.invalid");
+    expect(user.name).toBe("Scenario typical-abc123");
   });
 });

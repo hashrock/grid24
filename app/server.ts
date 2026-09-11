@@ -6,6 +6,8 @@ import { and, desc, eq } from "drizzle-orm";
 import { rootView } from "./root-view";
 import { users, icons } from "./db/schema";
 import { createIcon, seedStarterIcons } from "./db/icons";
+import { parseContent } from "./lib/svg";
+import { iconSvgResponse, parseSvgParams } from "./lib/svgServe";
 import { DEV_USER, authMiddleware, envAuth, type AuthProvider } from "./auth";
 import { scenariosRouter } from "./scenarios";
 import type { Env } from "./global.d";
@@ -243,6 +245,36 @@ export function createApp({ auth = envAuth }: AppOptions = {}) {
         },
       });
     })
+    // The icon as a plain SVG file — for `<img src>`, CSS `url()`, a README.
+    // Registered before `/i/:id` so the `.svg` suffix wins over the page.
+    // Same visibility rule as that page: public, or the owner's own.
+    .get("/i/:file{[^/]+\\.svg}", async (c) => {
+      const id = c.req.param("file").slice(0, -".svg".length);
+      const db = drizzle(c.env.DB);
+      const icon = await db
+        .select({
+          content: icons.content,
+          isPublic: icons.isPublic,
+          userId: icons.userId,
+          updatedAt: icons.updatedAt,
+        })
+        .from(icons)
+        .where(eq(icons.id, id))
+        .get();
+      const user = c.get("user");
+      if (!icon || (!icon.isPublic && (!user || icon.userId !== user.id))) {
+        // Plain text, not the HTML 404 page: this URL is consumed by an
+        // `<img>`, so nobody is there to click "back to the gallery".
+        return c.text("Not found", 404);
+      }
+      return iconSvgResponse({
+        paths: parseContent(icon.content),
+        updatedAt: icon.updatedAt,
+        isPublic: icon.isPublic,
+        params: parseSvgParams(c.req.query()),
+        ifNoneMatch: c.req.header("if-none-match"),
+      });
+    })
     // Public individual icon page. Visible if public, or to its owner.
     .get("/i/:id", async (c) => {
       const db = drizzle(c.env.DB);
@@ -269,6 +301,8 @@ export function createApp({ auth = envAuth }: AppOptions = {}) {
       const isOwner = !!user && icon.userId === user.id;
       return c.render("Icons/Show", {
         user,
+        // Absolute, because the page offers it as a link to paste elsewhere.
+        svgUrl: new URL(`/i/${icon.id}.svg`, c.req.url).toString(),
         icon: {
           id: icon.id,
           name: icon.name,

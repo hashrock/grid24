@@ -25,10 +25,35 @@
 | `GET /icons/:id/edit` | エディタ（所有者のみ） |
 | `PUT /api/icons/:id` | 自動保存（name / content / isPublic） |
 | `GET /i/:id` | 個別公開ページ（公開 or 所有者のみ） |
+| `GET /i/:id.svg` | SVG ファイルそのものを返す URL（下記） |
 | `GET /__scenarios` | UI テスト用シナリオ一覧。`/__scenarios/:name` で初期状態を作って遷移（[docs/ui-test-scenarios.md](docs/ui-test-scenarios.md)） |
 
 アイコンの内容はフラットな `Segment[]` を JSON で `icons.content` に保存し、
 公開時は `app/lib/svg.ts` で SVG に変換して描画します。
+
+### SVG を配信する URL
+
+`GET /i/:id.svg` は保存済みの内容から毎回 SVG を組み立てて `image/svg+xml` で返します。
+`<img src>` や CSS の `url()`、README への貼り付けにそのまま使えます
+（公開ページの「URL」タブからコピーできます）。
+
+```html
+<img src="https://grid.hashrock.info/i/abc123.svg?size=32" width="32" height="32" alt="">
+```
+
+| クエリ | 既定値 | 内容 |
+| --- | --- | --- |
+| `size` | `24` | width / height 属性（1〜1024）。`viewBox` は常に `0 0 24 24` |
+| `color` | `currentColor` | 線の色。`ff5722` のように `#` 抜きでも可（16 進 3/4/6/8 桁、または CSS の色名） |
+| `stroke` | `2` | 線の太さ（0〜8） |
+
+- 見える範囲は `/i/:id` と同じ。**公開アイコンは誰でも、非公開は所有者だけ**、それ以外は 404
+  （HTML ページではなくプレーンテキスト。呼び出し元は人ではなく `<img>` なので）
+- 公開アイコンは `Cache-Control: public, max-age=300` と `ETag`（`If-None-Match` で 304）、
+  非公開は `private, no-store`。編集して保存すると `updatedAt` が動くので ETag も変わる
+- 他サイトからの埋め込みが前提なので `Access-Control-Allow-Origin: *` を付けます
+- `color` は属性へ埋め込む値なのでエスケープではなく**許可リスト**で検証し、
+  外れた入力は既定値に落とします（`app/lib/svgServe.ts`）
 
 ## 認証
 

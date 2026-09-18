@@ -4,8 +4,9 @@
   "main": "./app/server.ts",
   "compatibility_date": "2025-08-03",
   "compatibility_flags": ["nodejs_compat"],
-  // Custom domain on the hashrock.info zone; wrangler creates the DNS record.
-  "routes": [{ "pattern": "grid.hashrock.info", "custom_domain": true }],
+  // Route on the hashrock.info zone. The proxied DNS record for grid.hashrock.info
+  // is managed in the dashboard; TLS uses the zone's Universal cert (*.hashrock.info).
+  "routes": [{ "pattern": "grid.hashrock.info/*", "zone_name": "hashrock.info" }],
   "d1_databases": [
     {
       "binding": "DB",

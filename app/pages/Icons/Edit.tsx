@@ -10,6 +10,7 @@ import {
 } from "../../lib/saveStatus";
 import { parseContent, serializeContent } from "../../lib/svg";
 import type { SessionUser } from "../../user";
+import { ServiceSwitcher } from "../../components/ServiceSwitcher";
 
 type IconData = {
   id: string;
@@ -209,6 +210,7 @@ export default function IconsEdit({
             />
             {isPublic ? "公開中 · 非公開に戻す" : "公開する"}
           </button>
+          <ServiceSwitcher className="text-neutral-400 hover:text-white" />
         </div>
       </header>
 

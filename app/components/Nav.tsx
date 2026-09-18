@@ -1,5 +1,6 @@
 import { Link } from "@inertiajs/react";
 import type { SessionUser } from "../user";
+import { ServiceSwitcher } from "./ServiceSwitcher";
 
 /** Top navigation shared across pages. */
 export function Nav({ user }: { user: SessionUser | null }) {
@@ -42,6 +43,8 @@ export function Nav({ user }: { user: SessionUser | null }) {
               ログイン
             </a>
           )}
+          {/* ログアウトの押し間違いを避けるため少し間を空ける */}
+          <ServiceSwitcher className="ml-1 text-neutral-400 hover:text-white sm:ml-2" />
         </nav>
       </div>
     </header>

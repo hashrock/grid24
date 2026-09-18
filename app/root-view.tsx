@@ -14,6 +14,8 @@ const Document = ({ page }: { page: PageObject }) => (
       <ViteClient />
       <Script src="/app/client.tsx" />
       <Link href="/app/styles.css" rel="stylesheet" />
+      {/* ヘッダ右端のサービス切り替え (components/ServiceSwitcher.tsx) */}
+      <script type="module" src="https://repos.hashrock.info/switcher/v1.js" />
     </head>
     <body className="bg-neutral-950 text-neutral-100 min-h-screen">
       <script

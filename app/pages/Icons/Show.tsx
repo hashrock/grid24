@@ -37,9 +37,13 @@ const FORMATS = [
   { key: "svg", label: "SVG" },
   { key: "jsx", label: "React" },
   { key: "uri", label: "Data URI" },
+  { key: "url", label: "URL" },
 ] as const;
 
 type Format = (typeof FORMATS)[number]["key"];
+
+/** Inline code inside prose — query parameters, tag names. */
+const KBD = "rounded bg-neutral-800 px-1 py-0.5 font-mono text-neutral-200";
 
 /** Sizes an icon has to survive; 16 is where a stroke design breaks first. */
 const PREVIEW_SIZES = [16, 24, 32, 48];
@@ -47,10 +51,13 @@ const PREVIEW_SIZES = [16, 24, 32, 48];
 export default function IconsShow({
   user,
   icon,
+  svgUrl,
   isOwner,
 }: {
   user: SessionUser | null;
   icon: ShowIcon;
+  /** Absolute URL of the hosted SVG file (`/i/:id.svg`). */
+  svgUrl: string;
   isOwner: boolean;
 }) {
   const paths = parseContent(icon.content);
@@ -60,6 +67,7 @@ export default function IconsShow({
     svg: pathsToSvgString(paths),
     jsx: pathsToJsxString(paths, icon.name),
     uri: pathsToDataUri(paths, "#000000"),
+    url: svgUrl,
   };
 
   const [format, setFormat] = useState<Format>("svg");
@@ -206,6 +214,36 @@ export default function IconsShow({
           <pre className="max-h-80 overflow-y-auto bg-neutral-950 p-4 text-left text-xs leading-relaxed text-neutral-400">
             <code className="whitespace-pre-wrap break-all">{code[format]}</code>
           </pre>
+
+          {/* The hosted URL is the one format that isn't self-explanatory:
+              it has options, and it only works for readers who can see the
+              icon at all. */}
+          {format === "url" && (
+            <div className="border-t border-neutral-800 bg-neutral-900/40 px-4 py-3 text-xs leading-relaxed text-neutral-400">
+              <p>
+                常に最新の SVG を返す URL です。<code className={KBD}>&lt;img src&gt;</code> や CSS の{" "}
+                <code className={KBD}>url()</code>、README にそのまま貼れます。
+              </p>
+              <ul className="mt-2 space-y-1">
+                <li>
+                  <code className={KBD}>?size=48</code> — 表示サイズ（1〜1024、既定 24）
+                </li>
+                <li>
+                  <code className={KBD}>?color=ff5722</code> — 線の色（16 進または CSS の色名、既定は{" "}
+                  <code className={KBD}>currentColor</code>）
+                </li>
+                <li>
+                  <code className={KBD}>?stroke=1.5</code> — 線の太さ（0〜8、既定 2）
+                </li>
+              </ul>
+              {!icon.isPublic && (
+                <p className="mt-2 text-amber-400">
+                  非公開のあいだは、この URL もあなた以外には 404 を返します。
+                  共有するには編集画面で公開してください。
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {sources.length > 0 && (

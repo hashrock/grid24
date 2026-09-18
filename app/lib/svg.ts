@@ -114,17 +114,26 @@ export function pathsToD(paths: Path[]): string[] {
   return paths.map(pathToD).filter((d) => d !== "");
 }
 
+/** Stroke appearance of a rendered SVG document. */
+export type SvgStyle = {
+  /** Stroke paint. Anything reaching this from a request must be validated first. */
+  color?: string;
+  strokeWidth?: number;
+};
+
 /**
- * Render a standalone SVG document string (for downloads / copy-paste).
+ * Render a standalone SVG document string (for downloads / copy-paste, and for
+ * the hosted `/i/:id.svg` URL).
  *
  * Presentation attributes are hoisted onto the root, the way Tabler ships its
  * icons: every `<path>` is then just its `d`, which is what makes the markup
  * readable on the public page instead of one unreadable line.
  */
-export function pathsToSvgString(paths: Path[], size = 24): string {
+export function pathsToSvgString(paths: Path[], size = 24, style: SvgStyle = {}): string {
+  const { color = "currentColor", strokeWidth = 2 } = style;
   const open =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}"\n` +
-    `     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">`;
+    `     fill="none" stroke="${color}" stroke-width="${n(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round">`;
   const body = pathsToD(paths).map((d) => `  <path d="${d}" />`);
   return [open, ...body, "</svg>"].join("\n");
 }
@@ -156,6 +165,6 @@ export function pathsToJsxString(paths: Path[], name = "Icon"): string {
 
 /** The icon as a `data:` URI — for CSS `url()` and `<img src>`. */
 export function pathsToDataUri(paths: Path[], color = "currentColor"): string {
-  const svg = pathsToSvgString(paths).replace(/currentColor/g, color);
+  const svg = pathsToSvgString(paths, 24, { color });
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }

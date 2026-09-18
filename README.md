@@ -25,6 +25,7 @@
 | `GET /icons/:id/edit` | エディタ（所有者のみ） |
 | `PUT /api/icons/:id` | 自動保存（name / content / isPublic） |
 | `GET /i/:id` | 個別公開ページ（公開 or 所有者のみ） |
+| `GET /api/stats` | サインアップ数（Bearer トークン認証。下記「サインアップ数 API」） |
 | `GET /__scenarios` | UI テスト用シナリオ一覧。`/__scenarios/:name` で初期状態を作って遷移（[docs/ui-test-scenarios.md](docs/ui-test-scenarios.md)） |
 
 アイコンの内容はフラットな `Segment[]` を JSON で `icons.content` に保存し、
@@ -71,6 +72,12 @@ Cookie を直接扱うのはこのモジュールだけです。
 動作します（OAuth を通しません）。`?guest=1` でログアウト状態をプレビューでき、
 ローカルで実際の OAuth を試したい場合は `DEV_BYPASS_AUTH` を外して
 `GOOGLE_ID` / `GOOGLE_SECRET` / `SESSION_SECRET` を `.dev.vars` に書きます。
+
+### サインアップ数 API
+
+`GET /api/stats` は repos.hashrock.info の管理画面向けに `{ service, generated_at, users: { total, new_7d, new_30d } }` を返します（`scenario-` ユーザは除外、`Cache-Control: no-store`）。
+認証はセッションではなく `Authorization: Bearer <STATS_TOKEN>` のみで、secret `STATS_TOKEN` が未設定なら 404、不一致なら 401 です。
+ローカルでは `.dev.vars` に `STATS_TOKEN=dev-stats-token` を足して `curl -H 'Authorization: Bearer dev-stats-token' localhost:5173/api/stats` で確認できます。
 
 ## 開発
 

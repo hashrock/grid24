@@ -8,6 +8,7 @@ import { users, icons } from "./db/schema";
 import { createIcon, seedStarterIcons } from "./db/icons";
 import { DEV_USER, authMiddleware, envAuth, type AuthProvider } from "./auth";
 import { scenariosRouter } from "./scenarios";
+import { statsRouter, type StatsOptions } from "./stats";
 import type { Env } from "./global.d";
 import type { NotFoundResponse } from "hono/types";
 
@@ -18,6 +19,8 @@ export type AppOptions = {
    * user so handlers can be exercised without cookies or a database.
    */
   auth?: AuthProvider;
+  /** Clock for `/api/stats`; tests pin it to check the 7/30-day windows. */
+  stats?: StatsOptions;
 };
 
 /** Where signed-out visitors of a signed-in-only page are sent, with the reason. */
@@ -34,12 +37,16 @@ h1{font-size:20px;margin:0 0 12px}p{color:#a3a3a3;font-size:14px;line-height:1.7
 <body><main><h1>ページが見つかりません</h1><p>アイコンが非公開になったか、削除された可能性があります。<br>リンクの送り主に確認するか、ギャラリーから探してみてください。</p><a href="/">ギャラリーへ戻る</a></main></body></html>`;
 }
 
-export function createApp({ auth = envAuth }: AppOptions = {}) {
+export function createApp({ auth = envAuth, stats }: AppOptions = {}) {
   const app = new Hono<Env>();
 
   // @hono/inertia types the not-found handler as a text response; the cast
   // keeps the HTML page while satisfying that declaration.
   app.notFound((c) => c.html(notFoundHtml(), 404) as unknown as NotFoundResponse);
+
+  // --- Sign-up stats for repos.hashrock.info: Bearer token only, so it sits
+  // ahead of the auth middleware and never resolves a session ---
+  app.route("/api/stats", statsRouter(stats));
 
   // --- Auth middleware: the provider decides, routes only read c.get("user") ---
   app.use("*", authMiddleware(auth));

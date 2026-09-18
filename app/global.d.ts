@@ -15,6 +15,8 @@ export type Env = {
     GOOGLE_SECRET?: string;
     // Dev-only: bypass auth with a fixed Dev User.
     DEV_BYPASS_AUTH?: string;
+    // Secret: Bearer token for GET /api/stats. Unset = the endpoint is a 404.
+    STATS_TOKEN?: string;
   };
   Variables: {
     user: SessionUser | null;

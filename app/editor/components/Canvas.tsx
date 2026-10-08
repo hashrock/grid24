@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { isTypingTarget } from '../utils/keyboard';
 import type { FC, Dispatch } from 'react';
 import { useRef, useState, useEffect, useMemo } from 'react';
 import { Path, Point, Tool, GRID_SNAP, SelectionBox, PRIMARY_COLOR, ANCHOR_HIT_PX, PATH_HOVER_PX, isSelectionTool } from '../types';
@@ -68,11 +69,6 @@ const GUIDE_COLOR = '#0891b2';
 // mirrors itself, and at exactly zero the box has no width left to drag back
 // out of — the gesture would be unrecoverable without an undo.
 const MIN_SCALE_SIZE = 1;
-
-const isTypingTarget = (e: KeyboardEvent) => {
-  const t = e.target as HTMLElement | null;
-  return t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable;
-};
 
 interface ResizeState {
   handle: ResizeHandleType;
@@ -190,6 +186,14 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
             b: { pathId: joinable[1].pathId, end: joinable[1].end },
           });
         }
+        return;
+      }
+      // Cmd/Ctrl+A selects every anchor; Cmd/Ctrl+D duplicates what the
+      // selection touches, nudged one grid cell so the copy is visible.
+      if (mod && !isTypingTarget(e) && (e.key.toLowerCase() === 'a' || e.key.toLowerCase() === 'd')) {
+        e.preventDefault();
+        if (e.key.toLowerCase() === 'a') dispatch({ type: 'selection/all' });
+        else if (selection.size > 0) dispatch({ type: 'paths/duplicate', seed: uuidv4(), offset: { x: 1, y: 1 } });
         return;
       }
       if (e.key === 'Escape') {

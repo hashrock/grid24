@@ -82,6 +82,13 @@ export type DocAction =
   | { type: 'selection/toggle'; keys: Iterable<NodeKey> }
   /** Select every anchor of a path — clicking its stroke in object mode. */
   | { type: 'selection/path'; pathId: string; additive: boolean }
+  /** Select every anchor on the canvas (Cmd+A). */
+  | { type: 'selection/all' }
+  /**
+   * Copy every path the selection touches, offset by `offset`, and select the
+   * copies. Ids derive from `seed`, so the reducer stays pure.
+   */
+  | { type: 'paths/duplicate'; seed: string; offset: Point }
   /** Select both anchors of one segment — clicking its stroke in direct mode. */
   | { type: 'selection/segment'; segmentId: string; additive: boolean }
   /**

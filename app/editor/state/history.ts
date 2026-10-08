@@ -16,6 +16,7 @@ const MAX_HISTORY = 100;
 const HISTORIC: Record<DocAction['type'], boolean> = {
   'paths/replace': true,
   'paths/append': true,
+  'paths/duplicate': true,
   'nodes/translate': true,
   'nodes/scale': true,
   'nodes/delete': true,
@@ -30,6 +31,7 @@ const HISTORIC: Record<DocAction['type'], boolean> = {
   'pen/dragHandle': true,
   'selection/set': false,
   'selection/toggle': false,
+  'selection/all': false,
   'selection/path': false,
   'selection/segment': false,
   'selection/box': false,

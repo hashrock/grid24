@@ -132,31 +132,31 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
         <ToolButton
           tool={Tool.DIRECT}
           label="頂点"
-          hint="頂点選択 — アンカーとハンドルを編集"
+          hint="頂点選択 (A) — アンカーとハンドルを編集"
           icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3l6.5 15.5 2.3-6.7 6.7-2.3L6 3z"/><rect x="2" y="17" width="4" height="4"/></svg>}
         />
         <ToolButton
           tool={Tool.SELECT}
           label="選択"
-          hint="図形選択 — パス全体を移動・変形"
+          hint="図形選択 (V) — パス全体を移動・変形"
           icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>}
         />
         <ToolButton
           tool={Tool.PEN}
           label="ペン"
-          hint="ペン — パスを描く"
+          hint="ペン (P) — パスを描く"
           icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>}
         />
         <ToolButton
           tool={Tool.SPLIT}
           label="分割"
-          hint="分割 — セグメントの途中にアンカーを追加"
+          hint="分割 (S) — セグメントの途中にアンカーを追加"
           icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>}
         />
         <ToolButton
             tool={Tool.ERASER}
             label="消去"
-            hint="消去 — セグメントを削除"
+            hint="消去 (E) — セグメントを削除"
             icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>}
         />
       </div>

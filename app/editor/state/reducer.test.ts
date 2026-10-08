@@ -23,6 +23,36 @@ describe('docReducer', () => {
     });
   });
 
+  describe('paths/duplicate', () => {
+    const offset = pt(1, 1);
+
+    it('copies only the touched paths, offset, and selects the copies', () => {
+      const before = doc(
+        [polyline('P', [pt(0, 0), pt(10, 0)]), polyline('Q', [pt(0, 5), pt(10, 5)])],
+        ['P1::p1']
+      );
+      const next = docReducer(before, { type: 'paths/duplicate', seed: 'x', offset });
+      expect(next.paths).toHaveLength(3);
+      expect(next.paths[2].segments[0].p1).toEqual(pt(1, 1));
+      expect(next.paths[2].segments[0].id).not.toBe(before.paths[0].segments[0].id);
+      const ids = new Set(next.paths[2].segments.map((s) => s.id));
+      expect(next.selection.size).toBe(2);
+      next.selection.forEach((k) => expect(ids.has(k.split('::')[0])).toBe(true));
+    });
+
+    it('is a no-op without a selection', () => {
+      const before = doc([polyline('P', [pt(0, 0), pt(10, 0)])]);
+      expect(docReducer(before, { type: 'paths/duplicate', seed: 'x', offset })).toBe(before);
+    });
+  });
+
+  describe('selection/all', () => {
+    it('selects every anchor of every path', () => {
+      const before = doc([polyline('P', [pt(0, 0), pt(10, 0), pt(10, 10)]), polyline('Q', [pt(0, 5), pt(10, 5)])]);
+      expect(docReducer(before, { type: 'selection/all' }).selection.size).toBe(6);
+    });
+  });
+
   describe('paths/append', () => {
     it('keeps existing paths', () => {
       const before = doc([polyline('P', [pt(0, 0), pt(10, 0)])]);

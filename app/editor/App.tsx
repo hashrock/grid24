@@ -5,6 +5,7 @@ import Canvas from './components/Canvas';
 import Toolbar from './components/Toolbar';
 import { DEFAULT_RENDER_STYLE, Path, Tool } from './types';
 import type { RenderStyle } from './types';
+import { isTypingTarget } from './utils/keyboard';
 import { createEditorState, editorReducer } from './state';
 
 interface EditorProps {
@@ -46,6 +47,15 @@ const readStoredRenderStyle = (): RenderStyle | null => {
   }
 };
 
+/** Single-key tool switches, following the Illustrator / Figma convention. */
+const TOOL_SHORTCUTS: Record<string, Tool> = {
+  a: Tool.DIRECT,
+  v: Tool.SELECT,
+  p: Tool.PEN,
+  s: Tool.SPLIT,
+  e: Tool.ERASER,
+};
+
 /**
  * Which tool a document opens with. An empty canvas has nothing to select,
  * so the pen is ready — the first click draws instead of doing nothing.
@@ -61,6 +71,15 @@ const App: FC<EditorProps> = ({ initialPaths = [], onChange, onTablerImport }) =
   const { paths, selection } = state.doc;
 
   const [tool, setTool] = useState<Tool>(() => initialToolFor(initialPaths));
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e)) return;
+      const next = TOOL_SHORTCUTS[e.key.toLowerCase()];
+      if (next) setTool(next);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   // Tabler icons are designed on a 24x24 grid with a 2px stroke.
   const gridSize = 24;
 

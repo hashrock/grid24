@@ -98,6 +98,30 @@ export function docReducer(state: DocState, action: DocAction): DocState {
       return { ...state, paths: [...state.paths, ...action.paths] };
     }
 
+    case 'paths/duplicate': {
+      const source = selectedPaths(state);
+      if (source.length === 0) return state;
+      const shift = (pt: Point): Point => ({ x: pt.x + action.offset.x, y: pt.y + action.offset.y });
+      const copies = source.map((path, i) => ({
+        ...path,
+        id: `${action.seed}-p${i}`,
+        segments: path.segments.map((s, j) => ({
+          ...s,
+          id: `${action.seed}-s${i}-${j}`,
+          p1: shift(s.p1),
+          c1: shift(s.c1),
+          c2: shift(s.c2),
+          p2: shift(s.p2),
+        })),
+      }));
+      const selection = new Set<NodeKey>();
+      copies.forEach((p) => anchorKeysOfPath(p).forEach((k) => selection.add(k)));
+      return { paths: [...state.paths, ...copies], selection };
+    }
+
+    case 'selection/all':
+      return withSelection(state, new Set(state.paths.flatMap((p) => [...anchorKeysOfPath(p)])));
+
     case 'nodes/translate': {
       const moved = translateNodes(state.paths, expandToControls(state.selection), action.delta);
       if (moved === state.paths) return state;

@@ -2,7 +2,8 @@
 import { isTypingTarget } from '../utils/keyboard';
 import type { FC, Dispatch } from 'react';
 import { useRef, useState, useEffect, useMemo } from 'react';
-import { Path, Point, Tool, GRID_SNAP, SelectionBox, PRIMARY_COLOR, ANCHOR_HIT_PX, PATH_HOVER_PX, isSelectionTool } from '../types';
+import { Path, Point, Tool, GRID_SNAP, SelectionBox, PRIMARY_COLOR, ANCHOR_HIT_PX, PATH_HOVER_PX, isSelectionTool, isShapeTool } from '../types';
+import { shapePath, type ShapeKind } from '../state/shapes';
 import type { RenderStyle } from '../types';
 import { findProjectedT, segmentToSvgPath } from '../utils/bezierHelper';
 import { pathsToD } from '../../lib/svg';
@@ -117,6 +118,15 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
   // Pen Tool State
   const [penState, setPenState] = useState<PenState | null>(null);
 
+  // Shape tools: the drag in progress. `constrain` is Shift (square / circle / 45°).
+  const [shapeDrag, setShapeDrag] = useState<{ start: Point; end: Point; constrain: boolean } | null>(null);
+  const shapeKind: ShapeKind | null =
+    tool === Tool.RECT ? 'rect' : tool === Tool.ELLIPSE ? 'ellipse' : tool === Tool.LINE ? 'line' : null;
+  const shapePreview = useMemo(
+    () => (shapeKind && shapeDrag ? shapePath(shapeKind, shapeDrag.start, shapeDrag.end, 'preview', shapeDrag.constrain) : null),
+    [shapeKind, shapeDrag],
+  );
+
   // Resize State
   const [resizeState, setResizeState] = useState<ResizeState | null>(null);
 
@@ -161,6 +171,7 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
     if (!isSelectionTool(tool) && tool !== Tool.PEN) {
       dispatch({ type: 'selection/clear' });
     }
+    setShapeDrag(null);
   }, [tool, dispatch]);
 
   useEffect(() => {
@@ -636,6 +647,8 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
                 } : null);
             }
         }
+    } else if (isShapeTool(tool)) {
+        setShapeDrag({ start: pos, end: pos, constrain: e.shiftKey });
     } else if (tool === Tool.SPLIT) {
        if (hoveredSegmentId) {
         const hit = placed.find(item => item.segment.id === hoveredSegmentId);
@@ -715,6 +728,11 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
             snap: GRID_SNAP,
             mergeKey: currentGesture(),
         });
+        return;
+    }
+
+    if (shapeDrag) {
+        setShapeDrag({ ...shapeDrag, end: pos, constrain: e.shiftKey });
         return;
     }
 
@@ -803,6 +821,11 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
         mergeKey: currentGesture(),
       });
     }
+    if (shapeDrag && shapeKind) {
+      const path = shapePath(shapeKind, shapeDrag.start, shapeDrag.end, uuidv4(), shapeDrag.constrain);
+      if (path) dispatch({ type: 'shape/add', path, mergeKey: startGesture() });
+    }
+    setShapeDrag(null);
     setJoinTargetBoth(null);
     setIsPanning(false);
     lastPanClient.current = null;
@@ -922,6 +945,19 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
               />
             );
           })}
+
+          {shapePreview && (
+            <path
+              d={pathsToD([shapePreview])[0]}
+              fill="none"
+              stroke={PRIMARY_COLOR}
+              strokeWidth={1.5 * upp}
+              strokeDasharray={`${3 * upp}`}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              pointerEvents="none"
+            />
+          )}
 
           {penState && tool === Tool.PEN && !isDragging && previewPoint && (
              <path

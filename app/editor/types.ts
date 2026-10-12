@@ -80,10 +80,16 @@ export enum Tool {
   SELECT = 'SELECT',
   PEN = 'PEN',
   SPLIT = 'SPLIT',
+  RECT = 'RECT',
+  ELLIPSE = 'ELLIPSE',
+  LINE = 'LINE',
   ERASER = 'ERASER'
 }
 
 /** Tools that edit an existing selection rather than creating geometry. */
+/** Drag-to-create tools: a rectangle, ellipse or straight line between two corners. */
+export const isShapeTool = (t: Tool) => t === Tool.RECT || t === Tool.ELLIPSE || t === Tool.LINE;
+
 export const isSelectionTool = (t: Tool) => t === Tool.DIRECT || t === Tool.SELECT;
 
 // Primary (accent) color for all overlay UI: selected paths, anchors,

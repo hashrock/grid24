@@ -2,8 +2,8 @@
 import { isTypingTarget } from '../utils/keyboard';
 import type { FC, Dispatch } from 'react';
 import { useRef, useState, useEffect, useMemo } from 'react';
-import { Path, Point, Tool, GRID_SNAP, SelectionBox, PRIMARY_COLOR, ANCHOR_HIT_PX, PATH_HOVER_PX, isSelectionTool, isShapeTool } from '../types';
-import { shapePath, type ShapeKind } from '../state/shapes';
+import { Path, Point, Tool, GRID_SNAP, SelectionBox, PRIMARY_COLOR, ANCHOR_HIT_PX, PATH_HOVER_PX, isSelectionTool, SHAPE_KIND } from '../types';
+import { shapePath } from '../state/shapes';
 import type { RenderStyle } from '../types';
 import { findProjectedT, segmentToSvgPath } from '../utils/bezierHelper';
 import { pathsToD } from '../../lib/svg';
@@ -120,12 +120,11 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
 
   // Shape tools: the drag in progress. `constrain` is Shift (square / circle / 45°).
   const [shapeDrag, setShapeDrag] = useState<{ start: Point; end: Point; constrain: boolean } | null>(null);
-  const shapeKind: ShapeKind | null =
-    tool === Tool.RECT ? 'rect' : tool === Tool.ELLIPSE ? 'ellipse' : tool === Tool.LINE ? 'line' : null;
-  const shapePreview = useMemo(
-    () => (shapeKind && shapeDrag ? shapePath(shapeKind, shapeDrag.start, shapeDrag.end, 'preview', shapeDrag.constrain) : null),
-    [shapeKind, shapeDrag],
-  );
+  const shapeKind = SHAPE_KIND[tool] ?? null;
+  const shapePreviewD = useMemo(() => {
+    const path = shapeKind && shapeDrag && shapePath(shapeKind, shapeDrag.start, shapeDrag.end, 'preview', shapeDrag.constrain);
+    return path ? pathsToD([path])[0] : null;
+  }, [shapeKind, shapeDrag]);
 
   // Resize State
   const [resizeState, setResizeState] = useState<ResizeState | null>(null);
@@ -647,7 +646,7 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
                 } : null);
             }
         }
-    } else if (isShapeTool(tool)) {
+    } else if (shapeKind) {
         setShapeDrag({ start: pos, end: pos, constrain: e.shiftKey });
     } else if (tool === Tool.SPLIT) {
        if (hoveredSegmentId) {
@@ -732,7 +731,9 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
     }
 
     if (shapeDrag) {
-        setShapeDrag({ ...shapeDrag, end: pos, constrain: e.shiftKey });
+        setShapeDrag(prev => prev && (prev.end.x === pos.x && prev.end.y === pos.y && prev.constrain === e.shiftKey
+            ? prev
+            : { ...prev, end: pos, constrain: e.shiftKey }));
         return;
     }
 
@@ -946,9 +947,9 @@ const Canvas: FC<CanvasProps> = ({ paths, selection, dispatch, tool, gridSize, r
             );
           })}
 
-          {shapePreview && (
+          {shapePreviewD && (
             <path
-              d={pathsToD([shapePreview])[0]}
+              d={shapePreviewD}
               fill="none"
               stroke={PRIMARY_COLOR}
               strokeWidth={1.5 * upp}

@@ -87,10 +87,16 @@ export enum Tool {
 }
 
 /** Tools that edit an existing selection rather than creating geometry. */
-/** Drag-to-create tools: a rectangle, ellipse or straight line between two corners. */
-export const isShapeTool = (t: Tool) => t === Tool.RECT || t === Tool.ELLIPSE || t === Tool.LINE;
-
 export const isSelectionTool = (t: Tool) => t === Tool.DIRECT || t === Tool.SELECT;
+
+/** Drag-to-create tools: a rectangle, ellipse or straight line between two corners. */
+export const SHAPE_KIND: Partial<Record<Tool, 'rect' | 'ellipse' | 'line'>> = {
+  [Tool.RECT]: 'rect',
+  [Tool.ELLIPSE]: 'ellipse',
+  [Tool.LINE]: 'line',
+};
+
+
 
 // Primary (accent) color for all overlay UI: selected paths, anchors,
 // handles, marquee, transform controls. Matches the Figma/Illustrator

@@ -1,5 +1,4 @@
 import type { Path } from "../editor/types";
-import { fitToPixels } from "./pixelFit";
 import { pathsToSvgString } from "./svg";
 
 /**
@@ -80,12 +79,10 @@ export function parseSvgParams(query: Record<string, string | undefined>): SvgPa
 
 /** Render the document this URL serves. */
 export function renderIconSvg(paths: Path[], params: SvgParams): string {
-  const fitted = params.fit
-    ? fitToPixels(paths, params.size, params.strokeWidth)
-    : { paths, strokeWidth: params.strokeWidth };
-  return pathsToSvgString(fitted.paths, params.size, {
+  return pathsToSvgString(paths, params.size, {
     color: params.color,
-    strokeWidth: fitted.strokeWidth,
+    strokeWidth: params.strokeWidth,
+    fit: params.fit,
   });
 }
 

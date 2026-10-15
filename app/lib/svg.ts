@@ -1,4 +1,5 @@
 import type { Path, Point, Segment, StoredSegment } from "../editor/types";
+import { fitToPixels } from "./pixelFit";
 import { freshId } from "./uniqueId";
 
 /**
@@ -119,6 +120,8 @@ export type SvgStyle = {
   /** Stroke paint. Anything reaching this from a request must be validated first. */
   color?: string;
   strokeWidth?: number;
+  /** Pixel-fit the geometry to `size` (see `pixelFit.ts`). Off by default. */
+  fit?: boolean;
 };
 
 /**
@@ -130,11 +133,12 @@ export type SvgStyle = {
  * readable on the public page instead of one unreadable line.
  */
 export function pathsToSvgString(paths: Path[], size = 24, style: SvgStyle = {}): string {
-  const { color = "currentColor", strokeWidth = 2 } = style;
+  const { color = "currentColor", fit = false } = style;
+  const fitted = fitToPixels(paths, size, style.strokeWidth ?? 2, fit);
   const open =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}"\n` +
-    `     fill="none" stroke="${color}" stroke-width="${n(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round">`;
-  const body = pathsToD(paths).map((d) => `  <path d="${d}" />`);
+    `     fill="none" stroke="${color}" stroke-width="${n(fitted.strokeWidth)}" stroke-linecap="round" stroke-linejoin="round">`;
+  const body = pathsToD(fitted.paths).map((d) => `  <path d="${d}" />`);
   return [open, ...body, "</svg>"].join("\n");
 }
 

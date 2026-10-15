@@ -2,7 +2,8 @@ import { Head, Link } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import { Nav } from "../../components/Nav";
 import { IconSvg } from "../../lib/IconSvg";
-import { PixelLoupe } from "../../lib/PixelLoupe";
+import { FitComparison } from "../../lib/PixelLoupe";
+import { DEFAULT_SVG_PARAMS } from "../../lib/svgServe";
 import {
   parseContent,
   pathsToDataUri,
@@ -49,14 +50,14 @@ const KBD = "rounded bg-neutral-800 px-1 py-0.5 font-mono text-neutral-200";
 /** Sizes an icon has to survive; 16 is where a stroke design breaks first. */
 const PREVIEW_SIZES = [16, 24, 32, 48];
 
-/** Stroke widths offered on the page; 2 is the grid's native weight. */
+/** Stroke widths offered on the page; the default 2 is the grid's native weight. */
 const STROKES = [1, 1.5, 2, 2.5, 3];
 
 /** The hosted URL with whichever non-default options the preview is set to. */
 function svgUrlFor(base: string, strokeWidth: number, fit: boolean): string {
   const url = new URL(base);
-  if (strokeWidth !== 2) url.searchParams.set("stroke", String(strokeWidth));
-  if (!fit) url.searchParams.set("fit", "0");
+  if (strokeWidth !== DEFAULT_SVG_PARAMS.strokeWidth) url.searchParams.set("stroke", String(strokeWidth));
+  if (fit !== DEFAULT_SVG_PARAMS.fit) url.searchParams.set("fit", fit ? "1" : "0");
   return url.toString();
 }
 
@@ -74,8 +75,8 @@ export default function IconsShow({
 }) {
   const paths = useMemo(() => parseContent(icon.content), [icon.content]);
   const sources = parseSources(icon.tablerSources);
-  const [strokeWidth, setStrokeWidth] = useState(2);
-  const [fit, setFit] = useState(true);
+  const [strokeWidth, setStrokeWidth] = useState(DEFAULT_SVG_PARAMS.strokeWidth);
+  const [fit, setFit] = useState(DEFAULT_SVG_PARAMS.fit);
 
   const code: Record<Format, string> = {
     svg: pathsToSvgString(paths),
@@ -197,22 +198,12 @@ export default function IconsShow({
             </div>
             {/* 16px is where a stroke design breaks first: show its real pixels,
                 unfitted against fitted, so the difference isn't taken on faith. */}
-            <div className="flex flex-wrap justify-center gap-6">
-              {([false, true] as const).map((fitted) => (
-                <div key={String(fitted)} className="flex flex-col items-center gap-2">
-                  <PixelLoupe
-                    paths={paths}
-                    size={16}
-                    strokeWidth={strokeWidth}
-                    fit={fitted}
-                    color={onLight ? "#000000" : "#ffffff"}
-                  />
-                  <span className="font-mono text-[10px] opacity-50">
-                    16px · {fitted ? "ピクセルフィット" : "そのまま"}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <FitComparison
+              paths={paths}
+              strokeWidth={strokeWidth}
+              color={onLight ? "#000000" : "#ffffff"}
+              labels={["16px · そのまま", "16px · ピクセルフィット"]}
+            />
           </div>
 
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-neutral-800 bg-neutral-900/40 px-4 py-3 text-xs">

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { Path } from "../editor/types";
 import { fitToPixels } from "./pixelFit";
 import { pathsToD } from "./svg";
@@ -23,7 +24,10 @@ export function IconSvg({
   fit?: boolean;
   className?: string;
 }) {
-  const fitted = fit ? fitToPixels(paths, size, strokeWidth) : { paths, strokeWidth };
+  const fitted = useMemo(
+    () => fitToPixels(paths, size, strokeWidth, fit),
+    [paths, size, strokeWidth, fit],
+  );
   const ds = pathsToD(fitted.paths);
   return (
     <svg

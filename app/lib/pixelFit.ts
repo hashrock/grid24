@@ -27,23 +27,32 @@ export type FitResult = {
 
 const GRID = 24;
 
-export function fitToPixels(paths: Path[], size: number, strokeWidth: number): FitResult {
+/** Move a control point by the same amount its anchor moved. */
+const follow = (c: Point, from: Point, to: Point): Point => ({
+  x: c.x + to.x - from.x,
+  y: c.y + to.y - from.y,
+});
+
+/** Fit to `size` device pixels; with `enabled` off, the input passes through. */
+export function fitToPixels(
+  paths: Path[],
+  size: number,
+  strokeWidth: number,
+  enabled = true,
+): FitResult {
   const k = size / GRID; // device px per grid unit
-  if (!(k > 0) || !(strokeWidth > 0)) return { paths, strokeWidth };
+  if (!enabled || !(k > 0) || !(strokeWidth > 0)) return { paths, strokeWidth };
 
   const devicePx = Math.max(1, Math.round(strokeWidth * k));
   const offset = (devicePx % 2) / 2; // 0.5 puts an odd stroke on pixel centres
   const snap = (v: number) => (Math.round(v * k - offset) + offset) / k;
+  const snapPt = (p: Point): Point => ({ x: snap(p.x), y: snap(p.y) });
 
   const fitted = paths.map((path) => ({
     ...path,
     segments: path.segments.map((s) => {
-      const p1 = { x: snap(s.p1.x), y: snap(s.p1.y) };
-      const p2 = { x: snap(s.p2.x), y: snap(s.p2.y) };
-      const follow = (c: Point, from: Point, to: Point) => ({
-        x: c.x + to.x - from.x,
-        y: c.y + to.y - from.y,
-      });
+      const p1 = snapPt(s.p1);
+      const p2 = snapPt(s.p2);
       return { ...s, p1, c1: follow(s.c1, s.p1, p1), c2: follow(s.c2, s.p2, p2), p2 };
     }),
   }));

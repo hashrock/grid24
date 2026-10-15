@@ -6,6 +6,7 @@ import type { RenderStyle } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { parsePathData } from '../../lib/pathImport';
 import { IconSvg } from '../../lib/IconSvg';
+import { FitComparison } from '../../lib/PixelLoupe';
 import { AI_GENERATION_ENABLED } from '../../lib/featureFlags';
 import TablerImportDialog from './TablerImportDialog';
 import { joinTargets, locateSegment, parseNodeKey } from '../state';
@@ -270,6 +271,11 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
               <span className="font-mono text-[10px] text-neutral-600">{size}px</span>
             </div>
           ))}
+        </div>
+
+        {/* The 16px rendering at real pixels, as drawn and pixel-fitted. */}
+        <div className="rounded border border-neutral-900 bg-neutral-950 py-3 text-neutral-500">
+          <FitComparison paths={paths} strokeWidth={renderStyle.strokeWidth} color="#ffffff" zoom={5} />
         </div>
 
         <div className="flex flex-col gap-1">

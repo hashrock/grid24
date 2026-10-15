@@ -37,6 +37,8 @@ export type DocAction =
   | { type: 'paths/replace'; paths: Path[] }
   /** Append without touching what's already on the canvas (Tabler import). */
   | { type: 'paths/append'; paths: Path[] }
+  /** Add a finished shape from a shape tool and select its anchors. */
+  | { type: 'shape/add'; path: Path }
   /** Move the selection by `delta` (drag or arrow keys). */
   | { type: 'nodes/translate'; delta: Point; mirror?: MirrorMode }
   /** Scale the selection from a fixed origin (transform box handles). */

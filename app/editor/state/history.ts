@@ -16,6 +16,7 @@ const MAX_HISTORY = 100;
 const HISTORIC: Record<DocAction['type'], boolean> = {
   'paths/replace': true,
   'paths/append': true,
+  'shape/add': true,
   'paths/duplicate': true,
   'nodes/translate': true,
   'nodes/scale': true,

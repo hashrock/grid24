@@ -126,7 +126,7 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
         <p className="text-xs text-neutral-500">monoline icons on a 24 × 24 grid</p>
       </div>
 
-      <div className="grid grid-cols-5 gap-2 md:grid-cols-2 md:gap-3">
+      <div className="grid grid-cols-4 gap-2 md:grid-cols-2 md:gap-3">
         {/* Direct vs object selection follow the vector-editor convention:
             a hollow arrow edits anchors, a solid one moves whole shapes. */}
         <ToolButton
@@ -146,6 +146,24 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
           label="ペン"
           hint="ペン (P) — パスを描く"
           icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>}
+        />
+        <ToolButton
+          tool={Tool.RECT}
+          label="矩形"
+          hint="矩形 (R) — ドラッグで四角形。Shift で正方形"
+          icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="5" width="16" height="14" rx="1"/></svg>}
+        />
+        <ToolButton
+          tool={Tool.ELLIPSE}
+          label="楕円"
+          hint="楕円 (O) — ドラッグで楕円。Shift で正円"
+          icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>}
+        />
+        <ToolButton
+          tool={Tool.LINE}
+          label="直線"
+          hint="直線 (L) — ドラッグで線分。Shift で 45° 刻み"
+          icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 19L19 5"/></svg>}
         />
         <ToolButton
           tool={Tool.SPLIT}

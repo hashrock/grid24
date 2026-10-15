@@ -54,6 +54,9 @@ const TOOL_SHORTCUTS: Record<string, Tool> = {
   p: Tool.PEN,
   s: Tool.SPLIT,
   e: Tool.ERASER,
+  r: Tool.RECT,
+  o: Tool.ELLIPSE,
+  l: Tool.LINE,
 };
 
 /**

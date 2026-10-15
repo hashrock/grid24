@@ -98,6 +98,9 @@ export function docReducer(state: DocState, action: DocAction): DocState {
       return { ...state, paths: [...state.paths, ...action.paths] };
     }
 
+    case 'shape/add':
+      return { ...state, paths: [...state.paths, action.path], selection: anchorKeysOfPath(action.path) };
+
     case 'paths/duplicate': {
       const source = selectedPaths(state);
       if (source.length === 0) return state;

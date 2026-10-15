@@ -2,7 +2,7 @@ import { Head, Link } from "@inertiajs/react";
 import { useMemo, useState } from "react";
 import { Nav } from "../../components/Nav";
 import { IconSvg } from "../../lib/IconSvg";
-import { FitComparison } from "../../lib/PixelLoupe";
+import { PixelLadder } from "../../lib/PixelLoupe";
 import { DEFAULT_SVG_PARAMS } from "../../lib/svgServe";
 import {
   parseContent,
@@ -196,13 +196,13 @@ export default function IconsShow({
                 </div>
               ))}
             </div>
-            {/* 16px is where a stroke design breaks first: show its real pixels,
-                unfitted against fitted, so the difference isn't taken on faith. */}
-            <FitComparison
+            {/* Real pixels where a stroke design breaks first, each size
+                labelled with the stroke width the fit gives it. */}
+            <PixelLadder
               paths={paths}
               strokeWidth={strokeWidth}
+              fit={fit}
               color={onLight ? "#000000" : "#ffffff"}
-              labels={["16px · そのまま", "16px · ピクセルフィット"]}
             />
           </div>
 

@@ -25,8 +25,8 @@ export function IconSvg({
   className?: string;
 }) {
   const fitted = useMemo(
-    () => fitToPixels(paths, size, strokeWidth, fit),
-    [paths, size, strokeWidth, fit],
+    () => fitToPixels(paths, size, strokeWidth, fit, strokeLinecap),
+    [paths, size, strokeWidth, fit, strokeLinecap],
   );
   const ds = pathsToD(fitted.paths);
   return (

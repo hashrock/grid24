@@ -87,12 +87,18 @@ export function renderIconSvg(paths: Path[], params: SvgParams): string {
 }
 
 /**
+ * Bump when the renderer's output changes for the same icon and query (e.g.
+ * the stroke table in `pixelFit.ts`), so cached copies stop validating.
+ */
+const RENDER_VERSION = 2;
+
+/**
  * A validator for the rendered bytes: the icon's `updatedAt` (every save moves
  * it) plus the query that shaped them. Cheap non-cryptographic hash — this
  * only has to change when the output does, and never has to be guessed.
  */
 export function svgEtag(updatedAt: string, params: SvgParams): string {
-  const key = `${updatedAt}|${params.size}|${params.color}|${params.strokeWidth}|${params.fit}`;
+  const key = `${RENDER_VERSION}|${updatedAt}|${params.size}|${params.color}|${params.strokeWidth}|${params.fit}`;
   let h = 5381;
   for (let i = 0; i < key.length; i++) h = ((h * 33) ^ key.charCodeAt(i)) >>> 0;
   return `"${h.toString(36)}"`;

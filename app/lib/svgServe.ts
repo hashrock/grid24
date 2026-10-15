@@ -1,4 +1,5 @@
 import type { Path } from "../editor/types";
+import { fitToPixels } from "./pixelFit";
 import { pathsToSvgString } from "./svg";
 
 /**
@@ -22,12 +23,15 @@ export type SvgParams = {
   size: number;
   color: string;
   strokeWidth: number;
+  /** Pixel-fit the geometry to `size` (see `pixelFit.ts`). `?fit=0` opts out. */
+  fit: boolean;
 };
 
 export const DEFAULT_SVG_PARAMS: SvgParams = {
   size: DEFAULT_SIZE,
   color: DEFAULT_COLOR,
   strokeWidth: DEFAULT_STROKE_WIDTH,
+  fit: true,
 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -64,20 +68,24 @@ export function parseColor(raw: string | undefined): string {
   return DEFAULT_COLOR;
 }
 
-/** Read `?size=` / `?color=` / `?stroke=`, clamped to what an icon can be. */
+/** Read `?size=` / `?color=` / `?stroke=` / `?fit=`, clamped to what an icon can be. */
 export function parseSvgParams(query: Record<string, string | undefined>): SvgParams {
   return {
     size: Math.round(clamp(num(query.size, DEFAULT_SIZE), 1, MAX_SIZE)),
     color: parseColor(query.color),
     strokeWidth: clamp(num(query.stroke, DEFAULT_STROKE_WIDTH), 0, MAX_STROKE_WIDTH),
+    fit: query.fit !== "0",
   };
 }
 
 /** Render the document this URL serves. */
 export function renderIconSvg(paths: Path[], params: SvgParams): string {
-  return pathsToSvgString(paths, params.size, {
+  const fitted = params.fit
+    ? fitToPixels(paths, params.size, params.strokeWidth)
+    : { paths, strokeWidth: params.strokeWidth };
+  return pathsToSvgString(fitted.paths, params.size, {
     color: params.color,
-    strokeWidth: params.strokeWidth,
+    strokeWidth: fitted.strokeWidth,
   });
 }
 
@@ -87,7 +95,7 @@ export function renderIconSvg(paths: Path[], params: SvgParams): string {
  * only has to change when the output does, and never has to be guessed.
  */
 export function svgEtag(updatedAt: string, params: SvgParams): string {
-  const key = `${updatedAt}|${params.size}|${params.color}|${params.strokeWidth}`;
+  const key = `${updatedAt}|${params.size}|${params.color}|${params.strokeWidth}|${params.fit}`;
   let h = 5381;
   for (let i = 0; i < key.length; i++) h = ((h * 33) ^ key.charCodeAt(i)) >>> 0;
   return `"${h.toString(36)}"`;

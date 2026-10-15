@@ -6,6 +6,7 @@ import type { RenderStyle } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { parsePathData } from '../../lib/pathImport';
 import { IconSvg } from '../../lib/IconSvg';
+import { PixelLoupe } from '../../lib/PixelLoupe';
 import { AI_GENERATION_ENABLED } from '../../lib/featureFlags';
 import TablerImportDialog from './TablerImportDialog';
 import { joinTargets, locateSegment, parseNodeKey } from '../state';
@@ -268,6 +269,16 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
                 strokeLinejoin={renderStyle.strokeLinejoin}
               />
               <span className="font-mono text-[10px] text-neutral-600">{size}px</span>
+            </div>
+          ))}
+        </div>
+
+        {/* The 16px rendering at real pixels, as drawn and pixel-fitted. */}
+        <div className="flex justify-center gap-4 rounded border border-neutral-900 bg-neutral-950 py-3">
+          {[false, true].map(fit => (
+            <div key={String(fit)} className="flex flex-col items-center gap-1">
+              <PixelLoupe paths={paths} size={16} strokeWidth={renderStyle.strokeWidth} fit={fit} color="#ffffff" zoom={5} />
+              <span className="font-mono text-[10px] text-neutral-600">{fit ? 'fit' : 'raw'}</span>
             </div>
           ))}
         </div>

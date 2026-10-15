@@ -1,13 +1,18 @@
 import type { Path } from "../editor/types";
+import { fitToPixels } from "./pixelFit";
 import { pathsToD } from "./svg";
 
-/** Renders a stroke icon (24x24 grid) as inline SVG. Uses currentColor. */
+/**
+ * Renders a stroke icon (24x24 grid) as inline SVG. Uses currentColor.
+ * Pixel-fitted to `size` unless `fit` is off — see `pixelFit.ts`.
+ */
 export function IconSvg({
   paths,
   size = 32,
   strokeWidth = 2,
   strokeLinecap = "round",
   strokeLinejoin = "round",
+  fit = true,
   className,
 }: {
   paths: Path[];
@@ -15,9 +20,11 @@ export function IconSvg({
   strokeWidth?: number;
   strokeLinecap?: "butt" | "round" | "square";
   strokeLinejoin?: "miter" | "round" | "bevel";
+  fit?: boolean;
   className?: string;
 }) {
-  const ds = pathsToD(paths);
+  const fitted = fit ? fitToPixels(paths, size, strokeWidth) : { paths, strokeWidth };
+  const ds = pathsToD(fitted.paths);
   return (
     <svg
       viewBox="0 0 24 24"
@@ -26,7 +33,7 @@ export function IconSvg({
       className={className}
       fill="none"
       stroke="currentColor"
-      strokeWidth={strokeWidth}
+      strokeWidth={fitted.strokeWidth}
       strokeLinecap={strokeLinecap}
       strokeLinejoin={strokeLinejoin}
     >

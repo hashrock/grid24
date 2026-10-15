@@ -81,6 +81,12 @@ describe("renderIconSvg", () => {
     expect(svg).toContain("<path ");
   });
 
+  it("pixel-fits to the requested size unless ?fit=0", () => {
+    // 2 units at 16px is 1.33px: fitted to a whole pixel, unfitted left as asked.
+    expect(renderIconSvg(paths, parseSvgParams({ size: "16" }))).toContain('stroke-width="1.5"');
+    expect(renderIconSvg(paths, parseSvgParams({ size: "16", fit: "0" }))).toContain('stroke-width="2"');
+  });
+
   it("renders an empty icon as a valid empty document, not a broken one", () => {
     const svg = renderIconSvg([], DEFAULT_SVG_PARAMS);
     expect(svg).toContain("<svg");
@@ -95,6 +101,7 @@ describe("svgEtag", () => {
     expect(a).toBe(svgEtag("2026-09-01T00:00:00.000Z", DEFAULT_SVG_PARAMS));
     expect(a).not.toBe(svgEtag("2026-09-02T00:00:00.000Z", DEFAULT_SVG_PARAMS));
     expect(a).not.toBe(svgEtag("2026-09-01T00:00:00.000Z", parseSvgParams({ size: "48" })));
+    expect(a).not.toBe(svgEtag("2026-09-01T00:00:00.000Z", parseSvgParams({ fit: "0" })));
     expect(a).toMatch(/^"[0-9a-z]+"$/);
   });
 });

@@ -1,7 +1,8 @@
 import { Head, Link } from "@inertiajs/react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Nav } from "../../components/Nav";
 import { IconSvg } from "../../lib/IconSvg";
+import { PixelLoupe } from "../../lib/PixelLoupe";
 import {
   parseContent,
   pathsToDataUri,
@@ -48,6 +49,17 @@ const KBD = "rounded bg-neutral-800 px-1 py-0.5 font-mono text-neutral-200";
 /** Sizes an icon has to survive; 16 is where a stroke design breaks first. */
 const PREVIEW_SIZES = [16, 24, 32, 48];
 
+/** Stroke widths offered on the page; 2 is the grid's native weight. */
+const STROKES = [1, 1.5, 2, 2.5, 3];
+
+/** The hosted URL with whichever non-default options the preview is set to. */
+function svgUrlFor(base: string, strokeWidth: number, fit: boolean): string {
+  const url = new URL(base);
+  if (strokeWidth !== 2) url.searchParams.set("stroke", String(strokeWidth));
+  if (!fit) url.searchParams.set("fit", "0");
+  return url.toString();
+}
+
 export default function IconsShow({
   user,
   icon,
@@ -60,14 +72,16 @@ export default function IconsShow({
   svgUrl: string;
   isOwner: boolean;
 }) {
-  const paths = parseContent(icon.content);
+  const paths = useMemo(() => parseContent(icon.content), [icon.content]);
   const sources = parseSources(icon.tablerSources);
+  const [strokeWidth, setStrokeWidth] = useState(2);
+  const [fit, setFit] = useState(true);
 
   const code: Record<Format, string> = {
     svg: pathsToSvgString(paths),
     jsx: pathsToJsxString(paths, icon.name),
     uri: pathsToDataUri(paths, "#000000"),
-    url: svgUrl,
+    url: svgUrlFor(svgUrl, strokeWidth, fit),
   };
 
   const [format, setFormat] = useState<Format>("svg");
@@ -170,17 +184,64 @@ export default function IconsShow({
           </div>
 
           <div className={`flex flex-col items-center gap-8 px-6 py-12 transition-colors ${surface}`}>
-            <IconSvg paths={paths} size={144} strokeWidth={2} />
+            <IconSvg paths={paths} size={144} strokeWidth={strokeWidth} fit={fit} />
             <div className="flex flex-wrap items-end justify-center gap-8">
               {PREVIEW_SIZES.map((size) => (
                 <div key={size} className="flex flex-col items-center gap-2">
                   <div className="flex h-12 items-end">
-                    <IconSvg paths={paths} size={size} strokeWidth={2} />
+                    <IconSvg paths={paths} size={size} strokeWidth={strokeWidth} fit={fit} />
                   </div>
                   <span className="font-mono text-[10px] opacity-50">{size}px</span>
                 </div>
               ))}
             </div>
+            {/* 16px is where a stroke design breaks first: show its real pixels,
+                unfitted against fitted, so the difference isn't taken on faith. */}
+            <div className="flex flex-wrap justify-center gap-6">
+              {([false, true] as const).map((fitted) => (
+                <div key={String(fitted)} className="flex flex-col items-center gap-2">
+                  <PixelLoupe
+                    paths={paths}
+                    size={16}
+                    strokeWidth={strokeWidth}
+                    fit={fitted}
+                    color={onLight ? "#000000" : "#ffffff"}
+                  />
+                  <span className="font-mono text-[10px] opacity-50">
+                    16px · {fitted ? "ピクセルフィット" : "そのまま"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-neutral-800 bg-neutral-900/40 px-4 py-3 text-xs">
+            <div className="flex items-center gap-1">
+              <span className="mr-2 text-neutral-500">太さ</span>
+              {STROKES.map((w) => (
+                <button
+                  key={w}
+                  onClick={() => setStrokeWidth(w)}
+                  className={`rounded px-2 py-1 font-mono transition-colors ${
+                    strokeWidth === w ? "bg-neutral-800 text-white" : "text-neutral-500 hover:text-white"
+                  }`}
+                >
+                  {w}
+                </button>
+              ))}
+            </div>
+            <label
+              className="flex cursor-pointer items-center gap-2 text-neutral-400"
+              title="表示サイズごとに線幅を整数ピクセルへ丸め、線の縁がピクセル境界に乗るよう頂点を寄せます"
+            >
+              <input
+                type="checkbox"
+                checked={fit}
+                onChange={(e) => setFit(e.target.checked)}
+                className="accent-white"
+              />
+              ピクセルフィット
+            </label>
           </div>
         </div>
 
@@ -234,6 +295,10 @@ export default function IconsShow({
                 </li>
                 <li>
                   <code className={KBD}>?stroke=1.5</code> — 線の太さ（0〜8、既定 2）
+                </li>
+                <li>
+                  <code className={KBD}>?fit=0</code> — ピクセルフィットを切る（既定は{" "}
+                  <code className={KBD}>size</code> に合わせて線幅と頂点をピクセルに揃える）
                 </li>
               </ul>
               {!icon.isPublic && (

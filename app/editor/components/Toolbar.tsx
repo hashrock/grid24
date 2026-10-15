@@ -6,7 +6,7 @@ import type { RenderStyle } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { parsePathData } from '../../lib/pathImport';
 import { IconSvg } from '../../lib/IconSvg';
-import { FitComparison } from '../../lib/PixelLoupe';
+import { PixelLadder } from '../../lib/PixelLoupe';
 import { AI_GENERATION_ENABLED } from '../../lib/featureFlags';
 import TablerImportDialog from './TablerImportDialog';
 import { joinTargets, locateSegment, parseNodeKey } from '../state';
@@ -33,6 +33,7 @@ const JOINS: RenderStyle['strokeLinejoin'][] = ['miter', 'round', 'bevel'];
 const PREVIEW_SIZES = [16, 24, 48];
 
 const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths, selection, dispatch, renderStyle, setRenderStyle, showGuides, setShowGuides }) => {
+  const [pixelFit, setPixelFit] = useState(true);
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [tablerOpen, setTablerOpen] = useState(false);
@@ -273,9 +274,21 @@ const Toolbar: FC<ToolbarProps> = ({ currentTool, setTool, onTablerImport, paths
           ))}
         </div>
 
-        {/* The 16px rendering at real pixels, as drawn and pixel-fitted. */}
-        <div className="rounded border border-neutral-900 bg-neutral-950 py-3 text-neutral-500">
-          <FitComparison paths={paths} strokeWidth={renderStyle.strokeWidth} color="#ffffff" zoom={5} />
+        {/* Real pixels at each size, with the stroke width each one gets. */}
+        <div className="flex flex-col gap-2 rounded border border-neutral-900 bg-neutral-950 py-3 text-neutral-500">
+          <PixelLadder
+            paths={paths}
+            strokeWidth={renderStyle.strokeWidth}
+            fit={pixelFit}
+            cap={renderStyle.strokeLinecap}
+            join={renderStyle.strokeLinejoin}
+            color="#ffffff"
+            cell={100}
+          />
+          <label className="flex cursor-pointer items-center justify-center gap-2 text-[10px]">
+            <input type="checkbox" checked={pixelFit} onChange={(e) => setPixelFit(e.target.checked)} className="accent-white" />
+            ピクセルフィット
+          </label>
         </div>
 
         <div className="flex flex-col gap-1">

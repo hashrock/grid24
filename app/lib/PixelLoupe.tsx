@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
-import type { Path } from "../editor/types";
-import { fitToPixels } from "./pixelFit";
+import type { Path, RenderStyle } from "../editor/types";
+import { fitToPixels, strokePx } from "./pixelFit";
 import { pathsToD } from "./svg";
 
-/** The size a stroke design breaks at first, so the one worth inspecting. */
-const LOUPE_SIZE = 16;
+type Cap = RenderStyle["strokeLinecap"];
+type Join = RenderStyle["strokeLinejoin"];
 
 /**
  * The icon rasterized at `size` real pixels, then blown up without smoothing,
@@ -16,16 +16,20 @@ const LOUPE_SIZE = 16;
  */
 export function PixelLoupe({
   paths,
-  size = LOUPE_SIZE,
+  size,
   strokeWidth,
   fit,
+  cap = "round",
+  join = "round",
   color,
   zoom = 6,
 }: {
   paths: Path[];
-  size?: number;
+  size: number;
   strokeWidth: number;
   fit: boolean;
+  cap?: Cap;
+  join?: Join;
   color: string;
   zoom?: number;
 }) {
@@ -34,17 +38,17 @@ export function PixelLoupe({
   useEffect(() => {
     const ctx = ref.current?.getContext("2d");
     if (!ctx) return;
-    const fitted = fitToPixels(paths, size, strokeWidth, fit);
+    const fitted = fitToPixels(paths, size, strokeWidth, fit, cap);
     const k = size / 24;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, size, size);
     ctx.setTransform(k, 0, 0, k, 0, 0);
     ctx.strokeStyle = color;
     ctx.lineWidth = fitted.strokeWidth;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
+    ctx.lineCap = cap;
+    ctx.lineJoin = join;
     for (const d of pathsToD(fitted.paths)) ctx.stroke(new Path2D(d));
-  }, [paths, size, strokeWidth, fit, color]);
+  }, [paths, size, strokeWidth, fit, cap, join, color]);
 
   return (
     <canvas
@@ -56,28 +60,58 @@ export function PixelLoupe({
   );
 }
 
-/** The same icon at 16px, as drawn and pixel-fitted, side by side. */
-export function FitComparison({
+/** The sizes worth checking pixel by pixel: where a stroke design breaks. */
+export const LADDER_SIZES = [16, 20, 24, 32];
+
+/**
+ * The icon at each of `sizes` in real pixels, each labelled with the stroke
+ * width it actually gets there — so the per-size stroke table can be checked
+ * at a glance. Every cell is zoomed to roughly `cell` CSS px, by a whole
+ * factor so every device pixel stays the same square.
+ */
+export function PixelLadder({
   paths,
   strokeWidth,
+  fit,
+  cap,
+  join,
   color,
-  zoom,
-  labels = ["raw", "fit"],
+  sizes = LADDER_SIZES,
+  cell = 96,
+  className = "",
 }: {
   paths: Path[];
   strokeWidth: number;
+  fit: boolean;
+  cap?: Cap;
+  join?: Join;
   color: string;
-  zoom?: number;
-  labels?: [string, string];
+  sizes?: number[];
+  cell?: number;
+  className?: string;
 }) {
   return (
-    <div className="flex flex-wrap justify-center gap-6">
-      {[false, true].map((fit, i) => (
-        <div key={i} className="flex flex-col items-center gap-1">
-          <PixelLoupe paths={paths} strokeWidth={strokeWidth} fit={fit} color={color} zoom={zoom} />
-          <span className="font-mono text-[10px] opacity-50">{labels[i]}</span>
-        </div>
-      ))}
+    <div className={`flex flex-wrap items-end justify-center gap-4 ${className}`}>
+      {sizes.map((size) => {
+        const px = fit ? strokePx(strokeWidth, size) : (strokeWidth * size) / 24;
+        return (
+          <div key={size} className="flex flex-col items-center gap-1">
+            <PixelLoupe
+              paths={paths}
+              size={size}
+              strokeWidth={strokeWidth}
+              fit={fit}
+              cap={cap}
+              join={join}
+              color={color}
+              zoom={Math.max(1, Math.round(cell / size))}
+            />
+            <span className="font-mono text-[10px] opacity-50">
+              {size}px · {Number(px.toFixed(2))}px
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
